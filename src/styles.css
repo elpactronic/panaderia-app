@@ -1,0 +1,298 @@
+:root {
+  --bg:        #1a1a2e;
+  --surface:   #16213e;
+  --card:      #0f3460;
+  --accent:    #e8a838;
+  --danger:    #e94560;
+  --success:   #4caf50;
+  --warning:   #ff9800;
+  --text:      #eaeaea;
+  --text-muted:#9ab;
+  --radius:    10px;
+  --shadow:    0 2px 12px rgba(0,0,0,.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 16px;
+}
+
+/* ── Layout ── */
+#app { display: flex; flex-direction: column; min-height: 100vh; }
+
+header {
+  background: var(--surface);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid var(--accent);
+  position: sticky; top: 0; z-index: 100;
+}
+
+header h1 { font-size: 1.1rem; color: var(--accent); flex: 1; }
+header .rol-badge {
+  font-size: .75rem;
+  background: var(--card);
+  padding: 3px 10px;
+  border-radius: 20px;
+  color: var(--text-muted);
+}
+
+main { flex: 1; padding: 16px; max-width: 600px; margin: 0 auto; width: 100%; }
+
+/* ── Pantalla login ── */
+.login-screen {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 80vh; gap: 24px;
+}
+.login-screen h2 { color: var(--accent); font-size: 1.5rem; }
+.login-screen p  { color: var(--text-muted); text-align: center; }
+.roles-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px; width: 100%;
+}
+.rol-btn {
+  background: var(--card);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 20px;
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color .2s, transform .1s;
+  text-align: center;
+}
+.rol-btn:hover  { border-color: var(--accent); transform: translateY(-2px); }
+.rol-btn .icon  { font-size: 2rem; display: block; margin-bottom: 8px; }
+
+/* ── Cards ── */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.card-title { font-weight: 600; color: var(--accent); }
+
+/* ── Status badges ── */
+.badge {
+  font-size: .7rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.badge-pendiente   { background: #333; color: #aaa; }
+.badge-en_proceso  { background: #1a3a5c; color: #6bb8ff; }
+.badge-embolsado   { background: #1a3a1a; color: var(--success); }
+.badge-entregado   { background: #1a3a1a; color: #8bc34a; }
+.badge-cancelado   { background: #3a1a1a; color: var(--danger); }
+
+/* ── Pedido card ── */
+.pedido-card {
+  background: var(--surface);
+  border-left: 4px solid var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.pedido-card.cancelado { border-left-color: var(--danger); opacity: .6; }
+.pedido-card.en_proceso { border-left-color: #6bb8ff; }
+.pedido-card.embolsado  { border-left-color: var(--success); }
+
+.pedido-cliente { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+.pedido-productos {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 10px;
+}
+.producto-tag {
+  background: var(--card);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+.producto-tag span { color: var(--text); font-weight: 600; }
+
+.pedido-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Botones ── */
+.btn {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-primary  { background: var(--accent);  color: #1a1a2e; }
+.btn-success  { background: var(--success); color: #fff; }
+.btn-danger   { background: var(--danger);  color: #fff; }
+.btn-ghost    { background: var(--card);    color: var(--text); }
+.btn-sm       { padding: 6px 12px; font-size: .8rem; }
+.btn-full     { width: 100%; }
+
+/* ── Formulario ── */
+.form-group { margin-bottom: 14px; }
+.form-group label {
+  display: block;
+  font-size: .85rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid #2a4a6a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 1rem;
+}
+.form-group input:focus, .form-group select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.productos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.seccion-titulo {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--accent);
+  margin: 16px 0 8px;
+  border-bottom: 1px solid var(--card);
+  padding-bottom: 4px;
+}
+
+/* ── Búsqueda ── */
+.search-box {
+  position: relative;
+  margin-bottom: 16px;
+}
+.search-box input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--card);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: var(--text);
+  font-size: 1rem;
+}
+.search-box input:focus { outline: none; border-color: var(--accent); }
+
+/* ── Dropdown clientes ── */
+.dropdown {
+  position: absolute;
+  top: 100%; left: 0; right: 0;
+  background: var(--surface);
+  border: 1px solid var(--card);
+  border-radius: 0 0 8px 8px;
+  z-index: 200;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.dropdown-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--card);
+}
+.dropdown-item:hover { background: var(--card); }
+.dropdown-item .grupo { font-size: .75rem; color: var(--text-muted); }
+
+/* ── Totales ── */
+.totales-bar {
+  background: var(--surface);
+  border-top: 2px solid var(--accent);
+  padding: 12px 16px;
+  position: sticky; bottom: 0;
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+.total-item { text-align: center; }
+.total-item .val { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+.total-item .lbl { font-size: .7rem; color: var(--text-muted); }
+
+/* ── Alertas ── */
+.alerta {
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: .9rem;
+}
+.alerta-warning { background: #2a2000; border-left: 4px solid var(--warning); }
+.alerta-danger  { background: #2a0000; border-left: 4px solid var(--danger);  }
+.alerta-success { background: #002a00; border-left: 4px solid var(--success); }
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 16px;
+  gap: 4px;
+}
+.tab {
+  flex: 1; padding: 10px; text-align: center;
+  border-radius: 8px; cursor: pointer;
+  font-size: .85rem; color: var(--text-muted);
+  border: none; background: transparent;
+}
+.tab.active { background: var(--card); color: var(--text); font-weight: 600; }
+
+/* ── Estado offline ── */
+.offline-banner {
+  background: var(--warning);
+  color: #1a1a2e;
+  text-align: center;
+  padding: 8px;
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+/* ── Spinner ── */
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--card);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 40px auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Print ── */
+@media print {
+  header, .pedido-actions, .btn, .tabs, .totales-bar, .offline-banner { display: none !important; }
+  body { background: white; color: black; }
+  .pedido-card { border: 1px solid #ccc; margin-bottom: 6px; }
+  .badge-cancelado { display: none; }
+}
+
+@media (max-width: 400px) {
+  .productos-grid { grid-template-columns: 1fr; }
+  .roles-grid     { grid-template-columns: 1fr; }
+}
