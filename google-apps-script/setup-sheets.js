@@ -30,6 +30,14 @@ function setupPanaderia() {
     'clave', 'valor'
   ]);
 
+  crearHoja(ss, 'historial', [
+    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id',
+    'frances_kg', 'minon_kg', 'sanguchero_kg', 'negro_kg',
+    'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
+    'fact_crema', 'media_luna', 'sacra_vigilante',
+    'monto_total', 'status', 'hora_pedido', 'embolsador', 'hora_embolsado', 'notas'
+  ]);
+
   cargarDatosIniciales(ss);
 
   Logger.log('✅ Estructura creada correctamente.');
@@ -80,9 +88,10 @@ function cargarDatosIniciales(ss) {
 
   // Config general
   const hojaConfig = ss.getSheetByName('config');
-  hojaConfig.getRange('A2:B3').setValues([
+  hojaConfig.getRange('A2:B4').setValues([
     ['hora_cierre_pedidos', '23:59'],
     ['version_app',         '1.0.0'],
+    ['cierre_num',          '0'],
   ]);
 
   SpreadsheetApp.flush();
@@ -124,6 +133,7 @@ function manejarRequest(e) {
       case 'cancelar_pedido':     resultado = cancelarPedido(datos.id);    break;
       case 'guardar_cliente':     resultado = guardarCliente(datos);       break;
       case 'guardar_precio':      resultado = guardarPrecio(datos);        break;
+      case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_pendientes); break;
       default:
         resultado = { error: 'Acción desconocida: ' + accion };
     }
@@ -172,10 +182,58 @@ function listarPrecios() {
   return hojaAObjetos('precios');
 }
 
-function listarPedidos(fecha) {
-  const todos = hojaAObjetos('pedidos');
-  if (!fecha) return todos;
-  return todos.filter(p => String(p.fecha).slice(0, 10) === String(fecha).slice(0, 10));
+function listarPedidos() {
+  const hoja = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('pedidos');
+  const [headers, ...filas] = hoja.getDataRange().getValues();
+  const tz = Session.getScriptTimeZone();
+  return filas
+    .filter(f => f.some(c => c !== ''))
+    .map(fila => Object.fromEntries(headers.map((h, i) => {
+      let val = fila[i];
+      if (val instanceof Date) val = Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
+      return [h, val];
+    })));
+}
+
+function cerrarDia(mantenerPendientes) {
+  const ss            = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaPedidos   = ss.getSheetByName('pedidos');
+  const hojaHistorial = ss.getSheetByName('historial');
+  const hojaConfig    = ss.getSheetByName('config');
+  const tz            = Session.getScriptTimeZone();
+
+  const cfgVals = hojaConfig.getDataRange().getValues();
+  let cierreNum = 1;
+  for (let i = 1; i < cfgVals.length; i++) {
+    if (cfgVals[i][0] === 'cierre_num') {
+      cierreNum = (parseInt(cfgVals[i][1]) || 0) + 1;
+      hojaConfig.getRange(i + 1, 2).setValue(cierreNum);
+      break;
+    }
+  }
+
+  const fechaCierre = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss");
+  const [headers, ...filas] = hojaPedidos.getDataRange().getValues();
+  const pedidos = filas.filter(f => f.some(c => c !== ''));
+
+  pedidos.forEach(fila => hojaHistorial.appendRow([cierreNum, fechaCierre, ...fila]));
+
+  if (hojaPedidos.getLastRow() > 1) {
+    hojaPedidos.getRange(2, 1, hojaPedidos.getLastRow() - 1, hojaPedidos.getLastColumn()).clearContent();
+  }
+
+  if (mantenerPendientes) {
+    const statusIdx = headers.indexOf('status');
+    pedidos.filter(f => f[statusIdx] === 'pendiente').forEach(fila => hojaPedidos.appendRow(fila));
+  }
+
+  return {
+    cierre_num: cierreNum,
+    fecha_cierre: fechaCierre,
+    pedidos: pedidos.map(fila =>
+      Object.fromEntries(headers.map((h, i) => [h, fila[i] instanceof Date ? fila[i].toISOString() : fila[i]]))
+    )
+  };
 }
 
 // ─── Helpers de escritura ──────────────────────────────────────────────────────

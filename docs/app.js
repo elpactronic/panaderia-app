@@ -42,7 +42,7 @@ async function cargarDatos() {
     api('listar_clientes'),
     api('listar_repartidores'),
     api('listar_precios'),
-    api('listar_pedidos', { fecha: estado.fecha }),
+    api('listar_pedidos'),
   ]);
   estado.clientes     = clientes     || [];
   estado.repartidores = repartidores || [];
@@ -758,11 +758,55 @@ function renderAdmin() {
             </button>` : ''}
         </div>`).join('')}
 
-      <button class="btn btn-ghost btn-full" style="margin-top:16px" onclick="window.print()">
-        🖨️ Imprimir lista del día
-      </button>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-ghost" style="flex:1" onclick="window.print()">
+          🖨️ Imprimir
+        </button>
+        <button class="btn btn-danger" style="flex:1" onclick="cerrarDia()">
+          🔒 Cerrar Día
+        </button>
+      </div>
     </main>
     <div id="modal-pedido"></div>`;
+}
+
+// ─── Cerrar día ───────────────────────────────────────────────────────────────
+async function cerrarDia() {
+  const total = estado.pedidos.filter(p => p.status !== 'cancelado').length;
+  const pendientes = estado.pedidos.filter(p => p.status === 'pendiente').length;
+
+  if (!confirm(`¿Cerrar el día?\n\n${total} pedidos en total.\n${pendientes} pendientes sin embolsar.`)) return;
+
+  const mantener = pendientes > 0
+    ? confirm(`Hay ${pendientes} pedido(s) todavía pendiente(s).\n¿Mantenerlos para mañana?`)
+    : false;
+
+  try {
+    const resultado = await api('cerrar_dia', { mantener_pendientes: mantener });
+    const num = String(resultado.cierre_num).padStart(3, '0');
+    descargarCSV(resultado.pedidos, `pedidos_${num}.csv`);
+    alert(`✅ Día cerrado. Backup guardado como pedidos_${num}.csv`);
+    await renderPantallaPrincipal();
+  } catch (err) {
+    alert('Error al cerrar el día: ' + err.message);
+  }
+}
+
+function descargarCSV(pedidos, nombre) {
+  if (!pedidos || !pedidos.length) return;
+  const headers = Object.keys(pedidos[0]);
+  const filas = pedidos.map(p =>
+    headers.map(h => {
+      const v = p[h] ?? '';
+      return typeof v === 'string' && v.includes(',') ? `"${v}"` : v;
+    }).join(',')
+  );
+  const csv = '﻿' + [headers.join(','), ...filas].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
@@ -794,5 +838,5 @@ Object.assign(window, {
   elegirRol, cerrarSesion, filtrarEncargada,
   abrirFormPedido, cerrarModal, buscarCliente, seleccionarCliente,
   guardarPedido, confirmarCancelar, tomarPedido, completarPedido,
-  marcarEntregado,
+  marcarEntregado, cerrarDia,
 });
