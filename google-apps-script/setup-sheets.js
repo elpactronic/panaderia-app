@@ -144,9 +144,20 @@ function manejarRequest(e) {
 function hojaAObjetos(nombre) {
   const hoja = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombre);
   const [headers, ...filas] = hoja.getDataRange().getValues();
+  const tz = Session.getScriptTimeZone();
   return filas
     .filter(f => f.some(c => c !== ''))
-    .map(fila => Object.fromEntries(headers.map((h, i) => [h, fila[i]])));
+    .map(fila => Object.fromEntries(headers.map((h, i) => {
+      let val = fila[i];
+      if (val instanceof Date) {
+        val = h === 'fecha'
+          ? Utilities.formatDate(val, tz, 'yyyy-MM-dd')
+          : Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
+      } else if (h === 'fecha' && typeof val === 'string' && val.length > 10) {
+        val = val.slice(0, 10);
+      }
+      return [h, val];
+    })));
 }
 
 function listarClientes() {
@@ -163,7 +174,8 @@ function listarPrecios() {
 
 function listarPedidos(fecha) {
   const todos = hojaAObjetos('pedidos');
-  return fecha ? todos.filter(p => p.fecha === fecha) : todos;
+  if (!fecha) return todos;
+  return todos.filter(p => String(p.fecha).slice(0, 10) === String(fecha).slice(0, 10));
 }
 
 // ─── Helpers de escritura ──────────────────────────────────────────────────────
@@ -171,7 +183,7 @@ function listarPedidos(fecha) {
 function crearPedido(datos) {
   const hoja = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('pedidos');
   const id = 'ped_' + Date.now();
-  const ahora = new Date().toISOString();
+  const ahora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
 
   const fila = [
     id,

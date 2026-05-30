@@ -1,6 +1,6 @@
 // ─── Configuración ────────────────────────────────────────────────────────────
 // Reemplazar con la URL de tu Web App de Google Apps Script después de deployar
-const API_URL = 'https://script.google.com/macros/s/AKfycbwIsWlobSL769-usr7lU4dDZd_1PGIOS7ltoOahqbpUctCVi4yv_ft4GkUIAPIZ6toHZw/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwnPiSqz5mr9cl65_fBPbOs9vyVT4UHoXGpBdRnTUccVbyQZ2yCP1KcQCkqcRDwga0UVw/exec';
 
 const GRUPOS = ['IONA', 'SanJuan', 'Pascual', 'Milton', 'Gaston', 'Mariana', 'PedidosChicos'];
 const HOY = new Date().toISOString().slice(0, 10);
