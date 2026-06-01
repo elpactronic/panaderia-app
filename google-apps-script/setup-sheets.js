@@ -133,7 +133,8 @@ function manejarRequest(e) {
       case 'cancelar_pedido':     resultado = cancelarPedido(datos.id);    break;
       case 'guardar_cliente':     resultado = guardarCliente(datos);       break;
       case 'guardar_precio':      resultado = guardarPrecio(datos);        break;
-      case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_pendientes); break;
+      case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_ids);       break;
+      case 'reordenar_clientes':  resultado = reordenarClientes(datos.clientes);   break;
       default:
         resultado = { error: 'Acción desconocida: ' + accion };
     }
@@ -171,7 +172,33 @@ function hojaAObjetos(nombre) {
 }
 
 function listarClientes() {
-  return hojaAObjetos('clientes').filter(c => c.activo !== false && c.activo !== 'FALSE');
+  return hojaAObjetos('clientes')
+    .filter(c => c.activo !== false && c.activo !== 'FALSE')
+    .sort((a, b) => (Number(a.orden) || 999) - (Number(b.orden) || 999));
+}
+
+function reordenarClientes(clientesOrdenados) {
+  const hoja  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('clientes');
+  const vals  = hoja.getDataRange().getValues();
+  const heads = vals[0];
+  const idIdx = heads.indexOf('id');
+  let ordenIdx = heads.indexOf('orden');
+
+  // Si no existe columna orden, agregarla
+  if (ordenIdx < 0) {
+    ordenIdx = heads.length;
+    hoja.getRange(1, ordenIdx + 1).setValue('orden');
+  }
+
+  clientesOrdenados.forEach(({ id, orden }) => {
+    for (let i = 1; i < vals.length; i++) {
+      if (String(vals[i][idIdx]) === String(id)) {
+        hoja.getRange(i + 1, ordenIdx + 1).setValue(orden);
+        break;
+      }
+    }
+  });
+  return { ok: true };
 }
 
 function listarRepartidores() {
@@ -195,7 +222,8 @@ function listarPedidos() {
     })));
 }
 
-function cerrarDia(mantenerPendientes) {
+function cerrarDia(mantenerIds) {
+  mantenerIds = mantenerIds || [];
   const ss            = SpreadsheetApp.getActiveSpreadsheet();
   const hojaPedidos   = ss.getSheetByName('pedidos');
   const hojaHistorial = ss.getSheetByName('historial');
@@ -222,9 +250,21 @@ function cerrarDia(mantenerPendientes) {
     hojaPedidos.getRange(2, 1, hojaPedidos.getLastRow() - 1, hojaPedidos.getLastColumn()).clearContent();
   }
 
-  if (mantenerPendientes) {
-    const statusIdx = headers.indexOf('status');
-    pedidos.filter(f => f[statusIdx] === 'pendiente').forEach(fila => hojaPedidos.appendRow(fila));
+  if (mantenerIds && mantenerIds.length > 0) {
+    const clienteIdx = headers.indexOf('cliente_id');
+    pedidos
+      .filter(f => mantenerIds.includes(String(f[clienteIdx])))
+      .forEach(fila => {
+        // Reiniciar el pedido como pendiente para el día siguiente
+        const nuevaFila = [...fila];
+        const statusIdx = headers.indexOf('status');
+        const embolsadorIdx = headers.indexOf('embolsador');
+        const horaEmbolsadoIdx = headers.indexOf('hora_embolsado');
+        if (statusIdx >= 0)      nuevaFila[statusIdx]      = 'pendiente';
+        if (embolsadorIdx >= 0)  nuevaFila[embolsadorIdx]  = '';
+        if (horaEmbolsadoIdx >= 0) nuevaFila[horaEmbolsadoIdx] = '';
+        hojaPedidos.appendRow(nuevaFila);
+      });
   }
 
   return {
