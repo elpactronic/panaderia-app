@@ -4,12 +4,24 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzUbVdXj1ikznvHOU8o5Hp8
 // ─── Estado global ────────────────────────────────────────────────────────────
 let estado = {
   rol: null, nombre: null,
+  planillaActiva: 'IONA',
+  planillas: [
+    { id: 'IONA',     nombre: 'Iona'     },
+    { id: 'SAN_JUAN', nombre: 'San Juan' },
+    { id: 'FACTURAS', nombre: 'Facturas' },
+    { id: 'PASCUAL',  nombre: 'Pascual'  },
+  ],
   clientes: [], repartidores: [], embolsadores: [], precios: [], pedidos: [],
   devoluciones: [],
   offline: false,
 };
 let filtroColumnas = 'ambos'; // 'pan' | 'tortillas' | 'ambos'
 let moveMode = { active: false, fromIdx: null };
+
+// Cargar planillas personalizadas creadas por el admin
+JSON.parse(localStorage.getItem('planillas_custom') || '[]').forEach(p => {
+  if (!estado.planillas.some(x => x.id === p.id)) estado.planillas.push(p);
+});
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 async function api(accion, datos = {}) {
@@ -136,17 +148,26 @@ async function renderPantallaPrincipal() {
 
 function setFiltro(f) { filtroColumnas = f; renderPlanilla(); }
 
+function setPlanilla(grupo) {
+  estado.planillaActiva = grupo;
+  filtroColumnas = 'ambos';
+  const s = JSON.parse(localStorage.getItem('sesion') || '{}');
+  localStorage.setItem('sesion', JSON.stringify({ ...s, planillaActiva: grupo }));
+  renderPlanilla();
+}
+
 // ─── PLANILLA ─────────────────────────────────────────────────────────────────
-function clientesIONA() {
+function clientesDePlanilla() {
   return estado.clientes
-    .filter(c => c.grupo === 'IONA')
+    .filter(c => c.grupo === estado.planillaActiva)
     .sort((a, b) => (n(a.orden) || 999) - (n(b.orden) || 999));
 }
 function pedidoDeCliente(cid) { return estado.pedidos.find(p => p.cliente_id === cid) || null; }
 
 function renderPlanilla() {
-  const clientes  = clientesIONA();
-  const esEnc     = estado.rol === 'encargada';
+  const clientes    = clientesDePlanilla();
+  const cidsActivos = new Set(clientes.map(c => c.id));
+  const esEnc       = estado.rol === 'encargada';
   const esEmb     = estado.rol === 'embolsador';
   const esRep     = estado.rol === 'repartidor';
   const esAdmin   = estado.rol === 'admin';
@@ -155,7 +176,7 @@ function renderPlanilla() {
   const showTort  = filtroColumnas !== 'pan';
 
   // Totales de la planilla
-  const activos = estado.pedidos.filter(p => p.status !== 'cancelado');
+  const activos = estado.pedidos.filter(p => p.status !== 'cancelado' && cidsActivos.has(p.cliente_id));
   const tots = {
     kg:   activos.reduce((s,p)=>s+kgPan(p),0),
     fran: activos.reduce((s,p)=>s+n(p.frances_kg),0),
@@ -169,13 +190,13 @@ function renderPlanilla() {
     tort: activos.reduce((s,p)=>s+totTortillas(p),0),
   };
 
-  const cancelados    = estado.pedidos.filter(p=>p.status==='cancelado').length;
-  const devNoRevisadas = estado.devoluciones.filter(d=>d.revisado==='no'||d.revisado===false).length;
+  const cancelados    = estado.pedidos.filter(p=>p.status==='cancelado'&&cidsActivos.has(p.cliente_id)).length;
+  const devNoRevisadas = estado.devoluciones.filter(d=>(d.revisado==='no'||d.revisado===false)&&cidsActivos.has(d.cliente_id)).length;
 
   document.querySelector('#app').innerHTML = `
     <div id="app-inner">
       <header>
-        <h1>Planilla IONA</h1>
+        <h1>${(estado.planillas.find(p=>p.id===estado.planillaActiva)||{nombre:estado.planillaActiva}).nombre}</h1>
         <div class="toggle-filtro">
           <button class="${filtroColumnas==='pan'?'active':''}" onclick="setFiltro('pan')">Pan</button>
           <button class="${filtroColumnas==='tortillas'?'active':''}" onclick="setFiltro('tortillas')">Tort.</button>
@@ -187,6 +208,9 @@ function renderPlanilla() {
         <button class="btn btn-ghost btn-sm" onclick="cerrarSesion()">Salir</button>
       </header>
 
+      <div class="planilla-tabs-bar">
+        ${estado.planillas.map(p=>`<button class="planilla-tab${p.id===estado.planillaActiva?' active':''}" onclick="setPlanilla('${p.id}')">${p.nombre}</button>`).join('')}
+      </div>
       ${devNoRevisadas>0 ? `<div class="alerta alerta-devolucion" style="margin:6px 8px 0">⚠️ ${devNoRevisadas} devolución(es) sin revisar</div>` : ''}
       ${cancelados>0 ? `<div class="alerta alerta-danger" style="margin:6px 8px 0">🚫 ${cancelados} pedido(s) cancelado(s)</div>` : ''}
       <div class="rol-badge-bar">👤 ${estado.nombre}</div>
@@ -216,7 +240,7 @@ function renderPlanilla() {
             ${clientes.map((c, i) => renderFila(c, pedidoDeCliente(c.id), i, showPan, showTort)).join('')}
           </tbody>
           <tfoot><tr class="fila-total">
-            ${esEnc ? '<td></td>' : ''}
+            <td></td>
             <td class="sticky-col" style="font-weight:700;font-size:.75rem">TOTAL</td>
             ${showPan ? `
               <td>${displayNum(tots.kg)}</td>
@@ -240,6 +264,7 @@ function renderPlanilla() {
       ${(esEnc||esAdmin) ? `
         <div class="planilla-bottom-bar">
           ${esEnc ? `<button class="btn btn-primary" onclick="abrirModalCliente(null)">+ Cliente</button>` : ''}
+          ${esAdmin ? `<button class="btn btn-primary" onclick="abrirModalNuevaPlanilla()">+ Planilla</button>` : ''}
           <button class="btn btn-danger" onclick="cerrarDia()">🔒 Cerrar Día</button>
         </div>
       ` : ''}
@@ -347,6 +372,7 @@ async function guardarCelda(td, nuevoVal) {
       const datos = {
         fecha: new Date().toISOString().slice(0, 10),
         cliente_id: cid,
+        grupo: estado.planillaActiva,
         frances_kg: 0, minon_kg: 0, sanguchero_kg: 0, negro_kg: 0,
         tort_fina: 0, tort_gruesa: 0, bollito: 0, cuernito_tomate: 0,
         fact_crema: 0, media_luna: 0, sacra_vigilante: 0,
@@ -446,6 +472,12 @@ function abrirModalCliente(clienteId) {
         <label>GPS (link Google Maps o coordenadas)</label>
         <input id="mc-gps" type="text" value="${c?.gps||''}" placeholder="https://maps.google.com/...">
       </div>
+      <div class="form-group">
+        <label>Planilla</label>
+        <select id="mc-planilla" style="width:100%;background:var(--card);border:1px solid #2a4a6a;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
+          ${estado.planillas.map(p=>`<option value="${p.id}" ${(c?.grupo||estado.planillaActiva)===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+        </select>
+      </div>
       <button class="btn btn-primary btn-full" onclick="guardarCliente('${c?.id||''}')">Guardar</button>
     </div>`;
   document.getElementById('modal-container').innerHTML = '';
@@ -458,7 +490,7 @@ async function guardarCliente(id) {
   const datos = {
     id:           id || undefined,
     nombre,
-    grupo:        'IONA',
+    grupo:        document.getElementById('mc-planilla')?.value || estado.planillaActiva,
     retira_local: false,
     telefono:     document.getElementById('mc-tel')?.value.trim() || '',
     direccion:    document.getElementById('mc-dir')?.value.trim() || '',
@@ -501,7 +533,7 @@ function cancelarMover() {
 }
 
 async function confirmarReorden(fromIdx, toIdx) {
-  const clientes = clientesIONA();
+  const clientes = clientesDePlanilla();
   const from = clientes[fromIdx];
   const to   = clientes[toIdx];
   if (!from || !to) return;
@@ -531,7 +563,7 @@ function exportarPDF() {
 }
 
 function exportarExcel() {
-  const clientes = clientesIONA();
+  const clientes = clientesDePlanilla();
   const headers = ['Cliente','Kg Pan','Francés','Miñón','Sanguchero','Negro','Tort.Fina','Tort.Gruesa','Bollito','Cuernito-Tomate','Total Tort.','Estado','Embolsador','Repartidor'];
   const filas = clientes.map(c => {
     const p = pedidoDeCliente(c.id) || {};
@@ -569,13 +601,13 @@ function exportarExcel() {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = `planilla_IONA_${new Date().toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = `planilla_${estado.planillaActiva}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click(); URL.revokeObjectURL(url);
 }
 
 // ─── Cerrar día ───────────────────────────────────────────────────────────────
 async function cerrarDia() {
-  const clientes = clientesIONA();
+  const clientes = clientesDePlanilla();
   if (!clientes.length) { alert('No hay clientes en la planilla'); return; }
 
   const modal = document.createElement('div');
@@ -583,7 +615,7 @@ async function cerrarDia() {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
   modal.innerHTML = `
     <div class="card" style="max-width:480px;margin:0 auto">
-      <h2 style="color:var(--accent);margin-bottom:4px">Cerrar Día</h2>
+      <h2 style="color:var(--accent);margin-bottom:4px">Cerrar Día — ${(estado.planillas.find(p=>p.id===estado.planillaActiva)||{nombre:estado.planillaActiva}).nombre}</h2>
       <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">
         Primero descargá la copia del día, luego elegí qué clientes mantener para mañana.
       </p>
@@ -642,7 +674,7 @@ async function confirmarCierreDia() {
   if (!confirm(`¿Confirmar cierre del día?\n${mantener.length} cliente(s) se mantendrán para mañana.`)) return;
 
   try {
-    const resultado = await api('cerrar_dia', { mantener_ids: mantener });
+    const resultado = await api('cerrar_dia', { mantener_ids: mantener, grupo: estado.planillaActiva });
     const num = String(resultado.cierre_num).padStart(3, '0');
     // Descarga automática del backup
     descargarCSVCierre(resultado.pedidos, `pedidos_${num}.csv`);
@@ -839,6 +871,46 @@ async function confirmarDevolucion(pedidoId) {
   } catch (err) { alert('Error: ' + err.message); }
 }
 
+// ─── Gestionar planillas (admin) ──────────────────────────────────────────────
+function abrirModalNuevaPlanilla() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-nueva-planilla';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:360px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span style="font-weight:700;color:var(--accent)">Nueva Planilla</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-nueva-planilla').remove()">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input id="np-nombre" type="text" placeholder="Ej: San Pedro, Mercado Norte...">
+      </div>
+      <button class="btn btn-primary btn-full" onclick="guardarNuevaPlanilla()">Crear planilla</button>
+    </div>`;
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+  document.getElementById('np-nombre').focus();
+  document.getElementById('np-nombre').addEventListener('keydown', e => { if (e.key === 'Enter') guardarNuevaPlanilla(); });
+}
+
+function guardarNuevaPlanilla() {
+  const nombre = document.getElementById('np-nombre')?.value.trim();
+  if (!nombre) { alert('Ingresá un nombre'); return; }
+  const id = nombre.toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  if (!id) { alert('Nombre inválido'); return; }
+  if (estado.planillas.some(p => p.id === id)) { alert('Ya existe una planilla con ese nombre'); return; }
+  const nueva = { id, nombre };
+  estado.planillas.push(nueva);
+  const custom = JSON.parse(localStorage.getItem('planillas_custom') || '[]');
+  custom.push(nueva);
+  localStorage.setItem('planillas_custom', JSON.stringify(custom));
+  document.getElementById('modal-nueva-planilla')?.remove();
+  setPlanilla(id);
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('online',  () => { renderOfflineBanner(false); renderPantallaPrincipal(); });
 window.addEventListener('offline', () => renderOfflineBanner(true));
@@ -852,6 +924,7 @@ const sesion = localStorage.getItem('sesion');
 if (sesion) {
   const s = JSON.parse(sesion);
   estado.rol = s.rol; estado.nombre = s.nombre;
+  if (s.planillaActiva) estado.planillaActiva = s.planillaActiva;
   api('listar_repartidores').then(r => { estado.repartidores = r || []; }).catch(() => {});
   renderPantallaPrincipal();
 } else {
@@ -860,7 +933,7 @@ if (sesion) {
 }
 
 Object.assign(window, {
-  elegirRol, cerrarSesion, setFiltro,
+  elegirRol, cerrarSesion, setFiltro, setPlanilla,
   activarEdicion, tomarPedido, completarPedido,
   marcarEntregado, cancelarPedidoFila, abrirModalCliente, guardarCliente,
   confirmarReorden, exportarPDF, exportarExcel,
@@ -868,4 +941,5 @@ Object.assign(window, {
   abrirModalDevolucion, confirmarDevolucion,
   tapMover, cancelarMover,
   abrirModalPersonal, renderModalPersonal, agregarPersonal, editarPersonal, eliminarPersonal,
+  abrirModalNuevaPlanilla, guardarNuevaPlanilla,
 });
