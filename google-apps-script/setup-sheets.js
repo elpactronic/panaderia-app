@@ -371,9 +371,13 @@ function guardarCliente(datos) {
       }
     }
   }
-  // insert
+  // insert — asignar orden al final
   const id = 'cli_' + Date.now();
-  hoja.appendRow([id, datos.nombre, datos.grupo, datos.repartidor_id, datos.retira_local || false, true]);
+  const todosClientes = hojaAObjetos('clientes');
+  const maxOrden = todosClientes.reduce((m, c) => Math.max(m, Number(c.orden) || 0), 0);
+  const fechaAlta = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  hoja.appendRow([id, datos.nombre, datos.grupo, datos.repartidor_id, datos.retira_local || false, true,
+                  datos.telefono || '', fechaAlta, maxOrden + 1]);
   return { id };
 }
 
