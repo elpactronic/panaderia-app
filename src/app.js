@@ -6,10 +6,10 @@ let estado = {
   rol: null, nombre: null,
   planillaActiva: 'IONA',
   planillas: [
-    { id: 'IONA',     nombre: 'Iona'     },
-    { id: 'SAN_JUAN', nombre: 'San Juan' },
-    { id: 'FACTURAS', nombre: 'Facturas' },
-    { id: 'PASCUAL',  nombre: 'Pascual'  },
+    { id: 'IONA',     nombre: 'Iona',     tipo: 'panaderia' },
+    { id: 'SAN_JUAN', nombre: 'San Juan', tipo: 'panaderia' },
+    { id: 'FACTURAS', nombre: 'Facturas', tipo: 'facturas'  },
+    { id: 'PASCUAL',  nombre: 'Pascual',  tipo: 'panaderia' },
   ],
   clientes: [], repartidores: [], embolsadores: [], precios: [], pedidos: [],
   devoluciones: [],
@@ -66,6 +66,7 @@ function cargarDesdeCache() {
 function n(v) { const x = parseFloat(v); return isNaN(x) ? 0 : x; }
 function kgPan(p)       { return n(p.frances_kg)+n(p.minon_kg)+n(p.sanguchero_kg)+n(p.negro_kg); }
 function totTortillas(p){ return n(p.tort_fina)+n(p.tort_gruesa)+n(p.bollito)+n(p.cuernito_tomate); }
+function totFacturas(p) { return n(p.fact_crema)+n(p.media_luna)+n(p.sacra_vigilante); }
 function calcularMonto(p) {
   const pr = (prod, tipo) => { const x = estado.precios.find(r=>r.producto===prod&&r.tipo===tipo); return x?n(x.precio_unitario):0; };
   return n(p.frances_kg)*pr('pan','frances')+n(p.minon_kg)*pr('pan','minon')+
@@ -172,8 +173,10 @@ function renderPlanilla() {
   const esRep     = estado.rol === 'repartidor';
   const esAdmin   = estado.rol === 'admin';
 
-  const showPan   = filtroColumnas !== 'tortillas';
-  const showTort  = filtroColumnas !== 'pan';
+  const tipo      = (estado.planillas.find(p=>p.id===estado.planillaActiva)||{}).tipo || 'panaderia';
+  const esFact    = tipo === 'facturas';
+  const showPan   = !esFact && filtroColumnas !== 'tortillas';
+  const showTort  = !esFact && filtroColumnas !== 'pan';
 
   // Totales de la planilla
   const activos = estado.pedidos.filter(p => p.status !== 'cancelado' && cidsActivos.has(p.cliente_id));
@@ -189,6 +192,12 @@ function renderPlanilla() {
     ct:   activos.reduce((s,p)=>s+n(p.cuernito_tomate),0),
     tort: activos.reduce((s,p)=>s+totTortillas(p),0),
   };
+  const totsF = {
+    crema:  activos.reduce((s,p)=>s+n(p.fact_crema),0),
+    medlun: activos.reduce((s,p)=>s+n(p.media_luna),0),
+    sacrvg: activos.reduce((s,p)=>s+n(p.sacra_vigilante),0),
+    total:  activos.reduce((s,p)=>s+totFacturas(p),0),
+  };
 
   const cancelados    = estado.pedidos.filter(p=>p.status==='cancelado'&&cidsActivos.has(p.cliente_id)).length;
   const devNoRevisadas = estado.devoluciones.filter(d=>(d.revisado==='no'||d.revisado===false)&&cidsActivos.has(d.cliente_id)).length;
@@ -197,11 +206,11 @@ function renderPlanilla() {
     <div id="app-inner">
       <header>
         <h1>${(estado.planillas.find(p=>p.id===estado.planillaActiva)||{nombre:estado.planillaActiva}).nombre}</h1>
-        <div class="toggle-filtro">
+        ${!esFact ? `<div class="toggle-filtro">
           <button class="${filtroColumnas==='pan'?'active':''}" onclick="setFiltro('pan')">Pan</button>
           <button class="${filtroColumnas==='tortillas'?'active':''}" onclick="setFiltro('tortillas')">Tort.</button>
           <button class="${filtroColumnas==='ambos'?'active':''}" onclick="setFiltro('ambos')">Todo</button>
-        </div>
+        </div>` : ''}
         ${(esEnc||esAdmin) ? `<button class="btn-icon" title="Gestionar personal" onclick="abrirModalPersonal()">👥</button>` : ''}
         <button class="btn-icon" title="PDF" onclick="exportarPDF()">📄</button>
         <button class="btn-icon" title="Excel" onclick="exportarExcel()">📊</button>
@@ -220,20 +229,27 @@ function renderPlanilla() {
           <thead><tr>
             <th class="th-drag">#</th>
             <th class="th-cliente sticky-col">Cliente</th>
-            ${showPan ? `
-              <th class="th-num">Kg</th>
-              <th class="th-num">Fra</th>
-              <th class="th-num">Miñ</th>
-              <th class="th-num">San</th>
-              <th class="th-num">Neg</th>
-            ` : ''}
-            ${showTort ? `
-              <th class="th-num">F</th>
-              <th class="th-num">G</th>
-              <th class="th-num">B</th>
-              <th class="th-num">C-T</th>
-              <th class="th-num">Tot</th>
-            ` : ''}
+            ${esFact ? `
+              <th class="th-num">Crema</th>
+              <th class="th-num">Med-Luna</th>
+              <th class="th-num">Sacr-Vig</th>
+              <th class="th-num">Total</th>
+            ` : `
+              ${showPan ? `
+                <th class="th-num">Kg</th>
+                <th class="th-num">Fra</th>
+                <th class="th-num">Miñ</th>
+                <th class="th-num">San</th>
+                <th class="th-num">Neg</th>
+              ` : ''}
+              ${showTort ? `
+                <th class="th-num">F</th>
+                <th class="th-num">G</th>
+                <th class="th-num">B</th>
+                <th class="th-num">C-T</th>
+                <th class="th-num">Tot</th>
+              ` : ''}
+            `}
             <th class="th-estado">Estado</th>
           </tr></thead>
           <tbody id="planilla-body">
@@ -242,20 +258,27 @@ function renderPlanilla() {
           <tfoot><tr class="fila-total">
             <td></td>
             <td class="sticky-col" style="font-weight:700;font-size:.75rem">TOTAL</td>
-            ${showPan ? `
-              <td>${displayNum(tots.kg)}</td>
-              <td>${displayNum(tots.fran)}</td>
-              <td>${displayNum(tots.min)}</td>
-              <td>${displayNum(tots.san)}</td>
-              <td>${displayNum(tots.neg)}</td>
-            ` : ''}
-            ${showTort ? `
-              <td>${tots.f||''}</td>
-              <td>${tots.g||''}</td>
-              <td>${tots.b||''}</td>
-              <td>${tots.ct||''}</td>
-              <td>${tots.tort||''}</td>
-            ` : ''}
+            ${esFact ? `
+              <td>${displayNum(totsF.crema)}</td>
+              <td>${displayNum(totsF.medlun)}</td>
+              <td>${displayNum(totsF.sacrvg)}</td>
+              <td>${displayNum(totsF.total)}</td>
+            ` : `
+              ${showPan ? `
+                <td>${displayNum(tots.kg)}</td>
+                <td>${displayNum(tots.fran)}</td>
+                <td>${displayNum(tots.min)}</td>
+                <td>${displayNum(tots.san)}</td>
+                <td>${displayNum(tots.neg)}</td>
+              ` : ''}
+              ${showTort ? `
+                <td>${tots.f||''}</td>
+                <td>${tots.g||''}</td>
+                <td>${tots.b||''}</td>
+                <td>${tots.ct||''}</td>
+                <td>${tots.tort||''}</td>
+              ` : ''}
+            `}
             <td></td>
           </tr></tfoot>
         </table>
@@ -275,11 +298,12 @@ function renderPlanilla() {
 }
 
 function renderFila(cliente, pedido, idx, showPan, showTort) {
-  const esEnc = estado.rol === 'encargada';
-  const esEmb = estado.rol === 'embolsador';
-  const esRep = estado.rol === 'repartidor';
-  const st    = pedido ? pedido.status : 'sin_pedido';
-  const cid   = cliente.id;
+  const esEnc  = estado.rol === 'encargada';
+  const esEmb  = estado.rol === 'embolsador';
+  const esRep  = estado.rol === 'repartidor';
+  const esFact = ((estado.planillas.find(p=>p.id===estado.planillaActiva)||{}).tipo||'panaderia') === 'facturas';
+  const st     = pedido ? pedido.status : 'sin_pedido';
+  const cid    = cliente.id;
 
   function tdEdit(campo, val) {
     const v = displayNum(val);
@@ -325,20 +349,27 @@ function renderFila(cliente, pedido, idx, showPan, showTort) {
     <tr class="${rowClass}" data-idx="${idx}" data-cid="${cid}">
       <td class="td-drag ${esEnc?'td-drag-enc':''}" data-idx="${idx}" ${esEnc?`onclick="tapMover(${idx})"`:''}>${idx+1}${esEnc?'<br><span style="font-size:.6rem;opacity:.6">✥</span>':''}</td>
       <td class="td-cliente sticky-col">${cliente.nombre}</td>
-      ${showPan ? `
-        <td class="td-kg">${pedido ? displayNum(kgPan(p)) : ''}</td>
-        ${tdEdit('frances_kg',    p.frances_kg)}
-        ${tdEdit('minon_kg',      p.minon_kg)}
-        ${tdEdit('sanguchero_kg', p.sanguchero_kg)}
-        ${tdEdit('negro_kg',      p.negro_kg)}
-      ` : ''}
-      ${showTort ? `
-        ${tdEdit('tort_fina',       p.tort_fina)}
-        ${tdEdit('tort_gruesa',     p.tort_gruesa)}
-        ${tdEdit('bollito',         p.bollito)}
-        ${tdEdit('cuernito_tomate', p.cuernito_tomate)}
-        <td class="td-num">${pedido ? displayNum(totTortillas(p)) : ''}</td>
-      ` : ''}
+      ${esFact ? `
+        ${tdEdit('fact_crema',      p.fact_crema)}
+        ${tdEdit('media_luna',      p.media_luna)}
+        ${tdEdit('sacra_vigilante', p.sacra_vigilante)}
+        <td class="td-num">${pedido ? displayNum(totFacturas(p)) : ''}</td>
+      ` : `
+        ${showPan ? `
+          <td class="td-kg">${pedido ? displayNum(kgPan(p)) : ''}</td>
+          ${tdEdit('frances_kg',    p.frances_kg)}
+          ${tdEdit('minon_kg',      p.minon_kg)}
+          ${tdEdit('sanguchero_kg', p.sanguchero_kg)}
+          ${tdEdit('negro_kg',      p.negro_kg)}
+        ` : ''}
+        ${showTort ? `
+          ${tdEdit('tort_fina',       p.tort_fina)}
+          ${tdEdit('tort_gruesa',     p.tort_gruesa)}
+          ${tdEdit('bollito',         p.bollito)}
+          ${tdEdit('cuernito_tomate', p.cuernito_tomate)}
+          <td class="td-num">${pedido ? displayNum(totTortillas(p)) : ''}</td>
+        ` : ''}
+      `}
       <td class="td-estado">${estadoCell}</td>
     </tr>`;
 }
@@ -564,38 +595,62 @@ function exportarPDF() {
 
 function exportarExcel() {
   const clientes = clientesDePlanilla();
-  const headers = ['Cliente','Kg Pan','Francés','Miñón','Sanguchero','Negro','Tort.Fina','Tort.Gruesa','Bollito','Cuernito-Tomate','Total Tort.','Estado','Embolsador','Repartidor'];
-  const filas = clientes.map(c => {
-    const p = pedidoDeCliente(c.id) || {};
-    return [
-      c.nombre,
-      displayNum(kgPan(p)),
-      displayNum(p.frances_kg), displayNum(p.minon_kg),
-      displayNum(p.sanguchero_kg), displayNum(p.negro_kg),
-      displayNum(p.tort_fina), displayNum(p.tort_gruesa),
-      displayNum(p.bollito), displayNum(p.cuernito_tomate),
-      displayNum(totTortillas(p)),
-      p.status || '—',
-      p.embolsador || '', p.repartidor_entrega || '',
-    ].map(v => String(v));
-  });
+  const tipo     = (estado.planillas.find(p=>p.id===estado.planillaActiva)||{}).tipo || 'panaderia';
+  const cids     = new Set(clientes.map(c=>c.id));
+  const activos  = estado.pedidos.filter(p=>p.status!=='cancelado'&&cids.has(p.cliente_id));
 
-  // Fila de totales
-  const activos = estado.pedidos.filter(p=>p.status!=='cancelado');
-  filas.push([
-    'TOTAL',
-    displayNum(activos.reduce((s,p)=>s+kgPan(p),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.frances_kg),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.minon_kg),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.sanguchero_kg),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.negro_kg),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.tort_fina),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.tort_gruesa),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.bollito),0)),
-    displayNum(activos.reduce((s,p)=>s+n(p.cuernito_tomate),0)),
-    displayNum(activos.reduce((s,p)=>s+totTortillas(p),0)),
-    '', '', '',
-  ]);
+  let headers, filas;
+
+  if (tipo === 'facturas') {
+    headers = ['Cliente','Crema','Media Luna','Sacra-Vigilante','Total Facturas','Estado'];
+    filas = clientes.map(c => {
+      const p = pedidoDeCliente(c.id) || {};
+      return [
+        c.nombre,
+        displayNum(p.fact_crema), displayNum(p.media_luna), displayNum(p.sacra_vigilante),
+        displayNum(totFacturas(p)),
+        p.status || '—',
+      ].map(v => String(v));
+    });
+    filas.push([
+      'TOTAL',
+      displayNum(activos.reduce((s,p)=>s+n(p.fact_crema),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.media_luna),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.sacra_vigilante),0)),
+      displayNum(activos.reduce((s,p)=>s+totFacturas(p),0)),
+      '',
+    ]);
+  } else {
+    headers = ['Cliente','Kg Pan','Francés','Miñón','Sanguchero','Negro','Tort.Fina','Tort.Gruesa','Bollito','Cuernito-Tomate','Total Tort.','Estado','Embolsador','Repartidor'];
+    filas = clientes.map(c => {
+      const p = pedidoDeCliente(c.id) || {};
+      return [
+        c.nombre,
+        displayNum(kgPan(p)),
+        displayNum(p.frances_kg), displayNum(p.minon_kg),
+        displayNum(p.sanguchero_kg), displayNum(p.negro_kg),
+        displayNum(p.tort_fina), displayNum(p.tort_gruesa),
+        displayNum(p.bollito), displayNum(p.cuernito_tomate),
+        displayNum(totTortillas(p)),
+        p.status || '—',
+        p.embolsador || '', p.repartidor_entrega || '',
+      ].map(v => String(v));
+    });
+    filas.push([
+      'TOTAL',
+      displayNum(activos.reduce((s,p)=>s+kgPan(p),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.frances_kg),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.minon_kg),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.sanguchero_kg),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.negro_kg),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.tort_fina),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.tort_gruesa),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.bollito),0)),
+      displayNum(activos.reduce((s,p)=>s+n(p.cuernito_tomate),0)),
+      displayNum(activos.reduce((s,p)=>s+totTortillas(p),0)),
+      '', '', '',
+    ]);
+  }
 
   const csv = '﻿' + [headers, ...filas].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -886,6 +941,13 @@ function abrirModalNuevaPlanilla() {
         <label>Nombre *</label>
         <input id="np-nombre" type="text" placeholder="Ej: San Pedro, Mercado Norte...">
       </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="np-tipo" style="width:100%;background:var(--card);border:1px solid #2a4a6a;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
+          <option value="panaderia">Panadería — pan + tortillas</option>
+          <option value="facturas">Facturas — crema, med-luna, sacr-vig</option>
+        </select>
+      </div>
       <button class="btn btn-primary btn-full" onclick="guardarNuevaPlanilla()">Crear planilla</button>
     </div>`;
   document.getElementById('modal-container').innerHTML = '';
@@ -902,7 +964,8 @@ function guardarNuevaPlanilla() {
     .replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
   if (!id) { alert('Nombre inválido'); return; }
   if (estado.planillas.some(p => p.id === id)) { alert('Ya existe una planilla con ese nombre'); return; }
-  const nueva = { id, nombre };
+  const tipo  = document.getElementById('np-tipo')?.value || 'panaderia';
+  const nueva = { id, nombre, tipo };
   estado.planillas.push(nueva);
   const custom = JSON.parse(localStorage.getItem('planillas_custom') || '[]');
   custom.push(nueva);
