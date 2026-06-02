@@ -235,12 +235,30 @@ function listarPedidos() {
     })));
 }
 
+function obtenerOCrearHoja(ss, nombre, columnas) {
+  let hoja = ss.getSheetByName(nombre);
+  if (!hoja) {
+    hoja = ss.insertSheet(nombre);
+    hoja.getRange(1, 1, 1, columnas.length).setValues([columnas]);
+    hoja.getRange(1, 1, 1, columnas.length).setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    hoja.setFrozenRows(1);
+  }
+  return hoja;
+}
+
 function cerrarDia(mantenerIds) {
   mantenerIds = mantenerIds || [];
-  const ss            = SpreadsheetApp.getActiveSpreadsheet();
-  const hojaPedidos   = ss.getSheetByName('pedidos');
-  const hojaHistorial = ss.getSheetByName('historial');
-  const hojaConfig    = ss.getSheetByName('config');
+  const ss          = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaPedidos = ss.getSheetByName('pedidos');
+  const hojaConfig  = ss.getSheetByName('config');
+
+  const hojaHistorial = obtenerOCrearHoja(ss, 'historial', [
+    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id',
+    'frances_kg', 'minon_kg', 'sanguchero_kg', 'negro_kg',
+    'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
+    'fact_crema', 'media_luna', 'sacra_vigilante',
+    'monto_total', 'status', 'hora_pedido', 'embolsador', 'hora_embolsado', 'notas'
+  ]);
   const tz            = Session.getScriptTimeZone();
 
   const cfgVals = hojaConfig.getDataRange().getValues();
@@ -411,7 +429,14 @@ function guardarPrecio(datos) {
 
 function registrarDevolucion(datos) {
   const ss   = SpreadsheetApp.getActiveSpreadsheet();
-  const hoja = ss.getSheetByName('devoluciones');
+  const hoja = obtenerOCrearHoja(ss, 'devoluciones', [
+    'id', 'fecha', 'pedido_id', 'cliente_id',
+    'frances_dev', 'minon_dev', 'sanguchero_dev', 'negro_dev',
+    'tort_fina_dev', 'tort_gruesa_dev', 'bollito_dev', 'cuernito_tomate_dev',
+    'fact_crema_dev', 'media_luna_dev', 'sacra_vigilante_dev',
+    'monto_devolucion', 'motivo', 'devuelto_por', 'rol_devuelto',
+    'hora_devolucion', 'revisado'
+  ]);
   const tz   = Session.getScriptTimeZone();
   const id   = 'dev_' + Date.now();
   const hora = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss");
