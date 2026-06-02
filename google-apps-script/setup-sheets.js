@@ -317,8 +317,17 @@ function actualizarPedido(datos) {
   const idIdx = heads.indexOf('id');
 
   for (let i = 1; i < vals.length; i++) {
-    if (vals[i][idIdx] === datos.id) {
+    if (String(vals[i][idIdx]) === String(datos.id)) {
+      // Validar status esperado (evita duplicados en "Tomar")
+      if (datos.expected_status) {
+        const statusIdx = heads.indexOf('status');
+        if (statusIdx >= 0 && vals[i][statusIdx] !== datos.expected_status) {
+          throw new Error('El pedido ya fue tomado por otro embolsador');
+        }
+      }
+      const ignorar = ['expected_status'];
       Object.entries(datos).forEach(([key, val]) => {
+        if (ignorar.includes(key)) return;
         const col = heads.indexOf(key);
         if (col >= 0) hoja.getRange(i + 1, col + 1).setValue(val);
       });

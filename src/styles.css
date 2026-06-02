@@ -192,12 +192,22 @@ header h1 { font-size: 1rem; color: var(--accent); flex: 1; white-space: nowrap;
 .spinner { width: 30px; height: 30px; border: 3px solid var(--card); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 60px auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Drag ghost ── */
+.drag-ghost {
+  position: fixed; z-index: 999; pointer-events: none;
+  background: var(--accent); color: #1a1a2e;
+  padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: .85rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5); white-space: nowrap;
+}
+.td-drag { touch-action: none; user-select: none; -webkit-user-select: none; }
+
 /* ── Print / PDF ── */
 @media print {
   :root { --bg: white; --surface: white; --card: #f0f0f0; --text: black; --text-muted: #555; --accent: #8B6914; }
   header, .toggle-filtro, .btn-icon, .planilla-bottom-bar, .alerta,
-  .td-drag, .th-drag, .btn-xs, .btn, .offline-banner, .rol-badge-bar { display: none !important; }
-  body { background: white; color: black; font-size: 11pt; }
+  .td-drag, .th-drag, .btn-xs, .btn, .offline-banner, .rol-badge-bar,
+  .td-estado, .th-estado, #modal-container { display: none !important; }
+  body { background: white; color: black; font-size: 10pt; }
   #app-inner { height: auto; }
   .planilla-scroll { overflow: visible; }
   .planilla { font-size: 9pt; border: 1px solid #ccc; width: 100%; }
@@ -205,8 +215,7 @@ header h1 { font-size: 1rem; color: var(--accent); flex: 1; white-space: nowrap;
   .planilla td { border: 1px solid #ccc; padding: 4px; }
   .sticky-col { position: static; }
   .fila-cancelada { display: none; }
-  .badge { font-size: 7pt; }
-  @page { size: legal landscape; margin: 1cm; }
+  @page { size: legal portrait; margin: 1.5cm 1cm; }
 }
 
 @media (max-width: 380px) {

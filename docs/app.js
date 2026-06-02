@@ -363,9 +363,21 @@ function actualizarCeldasDerivadas(tr, pedido) {
 // ─── Embolsador ───────────────────────────────────────────────────────────────
 async function tomarPedido(id) {
   try {
-    await api('actualizar_pedido', { id, status: 'en_proceso', embolsador: estado.nombre, hora_embolsado: new Date().toISOString() });
+    await api('actualizar_pedido', {
+      id, status: 'en_proceso',
+      expected_status: 'pendiente', // falla si ya fue tomado por otro
+      embolsador: estado.nombre,
+      hora_embolsado: new Date().toISOString(),
+    });
     await renderPantallaPrincipal();
-  } catch (err) { alert('Error: ' + err.message); }
+  } catch (err) {
+    if (err.message.includes('ya fue tomado') || err.message.includes('expected_status')) {
+      alert('⚠️ Este pedido ya fue tomado por otro embolsador.');
+    } else {
+      alert('Error: ' + err.message);
+    }
+    await renderPantallaPrincipal();
+  }
 }
 
 async function completarPedido(id) {
@@ -447,43 +459,62 @@ function initDragAndDrop() {
   const tbody = document.getElementById('planilla-body');
   if (!tbody) return;
 
-  let dragIdx = null, overIdx = null, ghost = null;
+  let dragIdx = null, ghost = null, longPressTimer = null;
+  let isDragging = false, startX = 0, startY = 0;
 
-  tbody.querySelectorAll('.td-drag').forEach(handle => {
-    handle.addEventListener('touchstart', e => {
-      dragIdx = parseInt(handle.dataset.idx);
-      const tr = handle.closest('tr');
-      tr.classList.add('dragging');
-      ghost = tr.cloneNode(true);
-      ghost.style.cssText = 'position:fixed;opacity:.6;pointer-events:none;z-index:999;background:var(--card);width:' + tr.offsetWidth + 'px';
+  tbody.addEventListener('touchstart', e => {
+    const handle = e.target.closest('.td-drag');
+    if (!handle) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    const idx = parseInt(handle.dataset.idx);
+
+    longPressTimer = setTimeout(() => {
+      isDragging = true;
+      dragIdx = idx;
+      handle.closest('tr').style.opacity = '0.4';
+      ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.textContent = clientesIONA()[idx]?.nombre || '';
+      ghost.style.left = startX + 'px';
+      ghost.style.top  = (startY - 35) + 'px';
       document.body.append(ghost);
-      e.preventDefault();
-    }, { passive: false });
+      if (navigator.vibrate) navigator.vibrate(60);
+    }, 350);
+  }, { passive: true });
 
-    handle.addEventListener('touchmove', e => {
-      if (ghost === null) return;
-      const t = e.touches[0];
-      ghost.style.left = t.clientX + 'px';
-      ghost.style.top  = (t.clientY - 20) + 'px';
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      const tr = el?.closest('tr[data-idx]');
-      if (tr) {
-        overIdx = parseInt(tr.dataset.idx);
-        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-        tr.classList.add('drag-over');
+  tbody.addEventListener('touchmove', e => {
+    const t = e.touches[0];
+    // Si el dedo se mueve mucho antes del long press, cancelar
+    if (!isDragging) {
+      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
+        clearTimeout(longPressTimer); longPressTimer = null;
       }
-      e.preventDefault();
-    }, { passive: false });
+      return;
+    }
+    e.preventDefault();
+    ghost.style.left = t.clientX + 'px';
+    ghost.style.top  = (t.clientY - 35) + 'px';
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const tr = el?.closest('tr[data-idx]');
+    if (tr && parseInt(tr.dataset.idx) !== dragIdx) tr.classList.add('drag-over');
+  }, { passive: false });
 
-    handle.addEventListener('touchend', async () => {
-      if (ghost) { ghost.remove(); ghost = null; }
-      tbody.querySelectorAll('tr').forEach(r => { r.classList.remove('dragging', 'drag-over'); });
-      if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
-        await confirmarReorden(dragIdx, overIdx);
-      }
-      dragIdx = null; overIdx = null;
-    });
-  });
+  tbody.addEventListener('touchend', async e => {
+    clearTimeout(longPressTimer); longPressTimer = null;
+    if (ghost) { ghost.remove(); ghost = null; }
+    tbody.querySelectorAll('tr').forEach(r => { r.classList.remove('drag-over'); r.style.opacity = ''; });
+    if (!isDragging) { isDragging = false; dragIdx = null; return; }
+
+    const t = e.changedTouches[0];
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const tr = el?.closest('tr[data-idx]');
+    const overIdx = tr ? parseInt(tr.dataset.idx) : null;
+    const from = dragIdx;
+    isDragging = false; dragIdx = null;
+    if (overIdx !== null && overIdx !== from) await confirmarReorden(from, overIdx);
+  }, { passive: true });
 }
 
 async function confirmarReorden(fromIdx, toIdx) {
@@ -564,40 +595,59 @@ async function cerrarDia() {
   const clientes = clientesIONA();
   if (!clientes.length) { alert('No hay clientes en la planilla'); return; }
 
-  // Modal para elegir qué clientes mantener
   const modal = document.createElement('div');
+  modal.id = 'modal-cierre';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
   modal.innerHTML = `
     <div class="card" style="max-width:480px;margin:0 auto">
       <h2 style="color:var(--accent);margin-bottom:4px">Cerrar Día</h2>
-      <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:16px">
-        Marcá los clientes que querés conservar para mañana con sus cantidades actuales.
+      <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">
+        Primero descargá la copia del día, luego elegí qué clientes mantener para mañana.
       </p>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="flex:1" onclick="exportarExcel()">📊 Excel</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="exportarPDFSinModal()">📄 PDF</button>
+      </div>
+      <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:8px">Clientes para mañana:</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn btn-ghost btn-sm" onclick="toggleTodos(true)">Marcar todos</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleTodos(false)">Desmarcar todos</button>
       </div>
-      <div id="lista-mantener">
+      <div id="lista-mantener" style="max-height:40vh;overflow-y:auto">
         ${clientes.map(c => {
           const p = pedidoDeCliente(c.id);
           const resumen = p ? `${displayNum(kgPan(p))}kg pan` + (totTortillas(p) > 0 ? ` · ${totTortillas(p)} tort.` : '') : 'Sin pedido';
           return `
-            <label style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--card);cursor:pointer">
+            <label style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--card);cursor:pointer">
               <input type="checkbox" data-cid="${c.id}" ${p?'checked':''} style="width:18px;height:18px">
               <span style="flex:1">${c.nombre}</span>
-              <span style="font-size:.8rem;color:var(--text-muted)">${resumen}</span>
+              <span style="font-size:.78rem;color:var(--text-muted)">${resumen}</span>
             </label>`;
         }).join('')}
       </div>
-      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-        <button class="btn btn-ghost" onclick="exportarExcel()">📊 Descargar Excel</button>
-        <button class="btn btn-ghost" onclick="exportarPDF()">📄 Descargar PDF</button>
-        <button class="btn btn-danger" style="flex:1" onclick="confirmarCierreDia()">Cerrar y limpiar</button>
-        <button class="btn btn-ghost btn-full" onclick="this.closest('[style]').remove()">Cancelar</button>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost" style="flex:1" onclick="cerrarModalCierre()">Cancelar (Esc)</button>
+        <button class="btn btn-danger" style="flex:1" onclick="confirmarCierreDia()">Limpiar lista</button>
       </div>
     </div>`;
   document.getElementById('modal-container').innerHTML = '';
   document.getElementById('modal-container').append(modal);
+
+  // Escape para cerrar
+  const onEsc = e => { if (e.key === 'Escape') { cerrarModalCierre(); document.removeEventListener('keydown', onEsc); } };
+  document.addEventListener('keydown', onEsc);
+}
+
+function cerrarModalCierre() {
+  document.getElementById('modal-cierre')?.remove();
+}
+
+function exportarPDFSinModal() {
+  // Ocultar modal temporalmente para imprimir la planilla limpia
+  const modal = document.getElementById('modal-cierre');
+  if (modal) modal.style.display = 'none';
+  window.print();
+  if (modal) modal.style.display = '';
 }
 
 function toggleTodos(val) {
@@ -654,5 +704,5 @@ Object.assign(window, {
   activarEdicion, tomarPedido, completarPedido,
   marcarEntregado, cancelarPedidoFila, abrirModalCliente, guardarCliente,
   confirmarReorden, exportarPDF, exportarExcel,
-  cerrarDia, toggleTodos, confirmarCierreDia,
+  cerrarDia, cerrarModalCierre, exportarPDFSinModal, toggleTodos, confirmarCierreDia,
 });
