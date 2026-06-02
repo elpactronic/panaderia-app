@@ -190,7 +190,7 @@ function renderPlanilla() {
       <div class="planilla-scroll">
         <table class="planilla" id="planilla-tabla">
           <thead><tr>
-            ${esEnc ? '<th class="th-drag"></th>' : ''}
+            <th class="th-drag">#</th>
             <th class="th-cliente sticky-col">Cliente</th>
             ${showPan ? `
               <th class="th-num">Kg</th>
@@ -294,7 +294,7 @@ function renderFila(cliente, pedido, idx, showPan, showTort) {
   const p = pedido || {};
   return `
     <tr class="${rowClass}" data-idx="${idx}" data-cid="${cid}">
-      ${esEnc ? `<td class="td-drag" data-idx="${idx}">☰</td>` : ''}
+      <td class="td-drag ${esEnc?'td-drag-enc':''}" data-idx="${idx}">${idx+1}${esEnc?' ☰':''}</td>
       <td class="td-cliente sticky-col">${cliente.nombre}</td>
       ${showPan ? `
         <td class="td-kg">${pedido ? displayNum(kgPan(p)) : ''}</td>
@@ -474,7 +474,7 @@ function initDragAndDrop() {
   let isDragging = false, startX = 0, startY = 0;
 
   tbody.addEventListener('touchstart', e => {
-    const handle = e.target.closest('.td-drag');
+    const handle = e.target.closest('.td-drag-enc');
     if (!handle) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
@@ -498,7 +498,7 @@ function initDragAndDrop() {
     const t = e.touches[0];
     // Si el dedo se mueve mucho antes del long press, cancelar
     if (!isDragging) {
-      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
+      if (Math.abs(t.clientX - startX) > 18 || Math.abs(t.clientY - startY) > 18) {
         clearTimeout(longPressTimer); longPressTimer = null;
       }
       return;

@@ -105,8 +105,10 @@ header h1 { font-size: 1rem; color: var(--accent); flex: 1; white-space: nowrap;
 .td-edit:active { background: rgba(232,168,56,.3); }
 
 /* Drag handle */
-.th-drag, .td-drag { width: 24px; padding: 4px 2px; color: var(--text-muted); cursor: grab; font-size: .9rem; }
-.td-drag:active { cursor: grabbing; }
+.th-drag { width: 32px; padding: 4px 2px; color: var(--text-muted); text-align:center; font-size:.72rem; }
+.td-drag { width: 32px; padding: 4px 3px; color: var(--text-muted); font-size: .75rem; text-align:center; user-select:none; -webkit-user-select:none; }
+.td-drag-enc { cursor: grab; touch-action: none; color: var(--accent); }
+.td-drag-enc:active { cursor: grabbing; }
 
 /* Estado */
 .td-estado { min-width: 110px; padding: 4px 6px; text-align: left; }
