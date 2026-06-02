@@ -6,7 +6,7 @@ function setupPanaderia() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   crearHoja(ss, 'clientes', [
-    'id', 'nombre', 'grupo', 'repartidor_id', 'retira_local', 'activo'
+    'id', 'nombre', 'grupo', 'repartidor_id', 'retira_local', 'activo', 'telefono', 'fecha_alta', 'orden'
   ]);
 
   crearHoja(ss, 'repartidores', [
@@ -36,6 +36,15 @@ function setupPanaderia() {
     'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
     'fact_crema', 'media_luna', 'sacra_vigilante',
     'monto_total', 'status', 'hora_pedido', 'embolsador', 'hora_embolsado', 'notas'
+  ]);
+
+  crearHoja(ss, 'devoluciones', [
+    'id', 'fecha', 'pedido_id', 'cliente_id',
+    'frances_dev', 'minon_dev', 'sanguchero_dev', 'negro_dev',
+    'tort_fina_dev', 'tort_gruesa_dev', 'bollito_dev', 'cuernito_tomate_dev',
+    'fact_crema_dev', 'media_luna_dev', 'sacra_vigilante_dev',
+    'monto_devolucion', 'motivo', 'devuelto_por', 'rol_devuelto',
+    'hora_devolucion', 'revisado'
   ]);
 
   cargarDatosIniciales(ss);
@@ -135,6 +144,10 @@ function manejarRequest(e) {
       case 'guardar_precio':      resultado = guardarPrecio(datos);        break;
       case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_ids);       break;
       case 'reordenar_clientes':  resultado = reordenarClientes(datos.clientes);   break;
+      case 'registrar_devolucion':resultado = registrarDevolucion(datos);          break;
+      case 'listar_devoluciones': resultado = listarDevoluciones();                break;
+      case 'marcar_devolucion_revisada': resultado = marcarDevolucionRevisada(datos.id); break;
+      case 'listar_historial':    resultado = listarHistorial(datos.mes);          break;
       default:
         resultado = { error: 'Acción desconocida: ' + accion };
     }
@@ -377,4 +390,62 @@ function guardarPrecio(datos) {
   }
   hoja.appendRow([datos.producto, datos.tipo, datos.precio_unitario]);
   return { insertado: true };
+}
+
+// ─── Devoluciones ──────────────────────────────────────────────────────────────
+
+function registrarDevolucion(datos) {
+  const ss   = SpreadsheetApp.getActiveSpreadsheet();
+  const hoja = ss.getSheetByName('devoluciones');
+  const tz   = Session.getScriptTimeZone();
+  const id   = 'dev_' + Date.now();
+  const hora = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss");
+
+  hoja.appendRow([
+    id, hora.slice(0, 10), datos.pedido_id, datos.cliente_id,
+    datos.frances_dev      || 0, datos.minon_dev       || 0,
+    datos.sanguchero_dev   || 0, datos.negro_dev        || 0,
+    datos.tort_fina_dev    || 0, datos.tort_gruesa_dev  || 0,
+    datos.bollito_dev      || 0, datos.cuernito_tomate_dev || 0,
+    datos.fact_crema_dev   || 0, datos.media_luna_dev   || 0,
+    datos.sacra_vigilante_dev || 0,
+    datos.monto_devolucion || 0, datos.motivo || '',
+    datos.devuelto_por, datos.rol_devuelto, hora, 'no'
+  ]);
+
+  // Actualizar el pedido: restar monto y marcar que tiene devolución
+  actualizarPedido({
+    id: datos.pedido_id,
+    monto_devolucion: datos.monto_devolucion || 0,
+  });
+
+  return { id };
+}
+
+function listarDevoluciones() {
+  return hojaAObjetos('devoluciones');
+}
+
+function marcarDevolucionRevisada(id) {
+  const hoja  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('devoluciones');
+  const vals  = hoja.getDataRange().getValues();
+  const heads = vals[0];
+  const idIdx = heads.indexOf('id');
+  const revIdx = heads.indexOf('revisado');
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][idIdx]) === String(id)) {
+      hoja.getRange(i + 1, revIdx + 1).setValue('si');
+      return { ok: true };
+    }
+  }
+  return { ok: false };
+}
+
+// ─── Historial para informes ───────────────────────────────────────────────────
+
+function listarHistorial(mes) {
+  const todos = hojaAObjetos('historial');
+  if (!mes) return todos;
+  // mes formato: "2026-05"
+  return todos.filter(r => String(r.fecha_cierre).slice(0, 7) === mes);
 }

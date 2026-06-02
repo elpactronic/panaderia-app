@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Superior — Panadería</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#1a1a2e; --surface:#16213e; --card:#0f3460; --accent:#e8a838;
+      --danger:#e94560; --success:#4caf50; --warning:#f5c842; --text:#eaeaea; --muted:#9ab;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+    /* LOGIN */
+    #login-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; gap:16px; }
+    #login-screen h1 { color:var(--accent); font-size:1.6rem; }
+    #pin-input { width:200px; text-align:center; background:var(--card); border:2px solid var(--accent); border-radius:8px; padding:12px; color:var(--text); font-size:1.4rem; letter-spacing:.5rem; }
+    #pin-input:focus { outline:none; }
+    #login-btn { background:var(--accent); color:#1a1a2e; border:none; border-radius:8px; padding:12px 32px; font-size:1rem; font-weight:700; cursor:pointer; }
+    #pin-error { color:var(--danger); font-size:.85rem; display:none; }
+
+    /* LAYOUT */
+    #admin-app { display:none; }
+    header { background:var(--surface); padding:12px 20px; display:flex; align-items:center; gap:12px; border-bottom:2px solid var(--accent); }
+    header h1 { color:var(--accent); font-size:1.1rem; flex:1; }
+    nav { background:var(--surface); display:flex; gap:4px; padding:8px 16px; border-bottom:1px solid var(--card); overflow-x:auto; }
+    nav button { padding:8px 16px; border:none; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; font-size:.85rem; white-space:nowrap; }
+    nav button.active { background:var(--card); color:var(--text); font-weight:600; }
+    main { padding:16px; max-width:1000px; margin:0 auto; }
+
+    /* SECCIONES */
+    .seccion { display:none; }
+    .seccion.visible { display:block; }
+
+    /* TARJETAS RESUMEN */
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:20px; }
+    .kpi { background:var(--surface); border-radius:10px; padding:16px; text-align:center; border-top:3px solid var(--accent); }
+    .kpi .val { font-size:1.6rem; font-weight:700; color:var(--accent); }
+    .kpi .lbl { font-size:.75rem; color:var(--muted); margin-top:4px; }
+
+    /* GRÁFICOS */
+    .chart-card { background:var(--surface); border-radius:10px; padding:16px; margin-bottom:16px; }
+    .chart-card h3 { font-size:.9rem; color:var(--accent); margin-bottom:12px; }
+    .chart-wrap { position:relative; height:260px; }
+
+    /* TABLA */
+    .tabla-wrap { overflow-x:auto; margin-bottom:16px; }
+    table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    th { background:var(--card); padding:8px 10px; text-align:left; color:var(--accent); font-size:.75rem; text-transform:uppercase; white-space:nowrap; }
+    td { padding:7px 10px; border-bottom:1px solid rgba(255,255,255,.05); white-space:nowrap; }
+    tr:hover td { background:rgba(255,255,255,.03); }
+
+    /* SELECTOR MES */
+    .selector-mes { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+    .selector-mes label { font-size:.85rem; color:var(--muted); }
+    .selector-mes input { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:6px 10px; color:var(--text); font-size:.9rem; }
+    .selector-mes button { background:var(--accent); color:#1a1a2e; border:none; border-radius:6px; padding:7px 16px; font-weight:600; cursor:pointer; }
+
+    /* DEVOLUCIONES */
+    .badge-revisado { display:inline-block; font-size:.7rem; padding:2px 8px; border-radius:10px; }
+    .badge-no { background:#3a2a00; color:#f5c842; }
+    .badge-si { background:#1a3a1a; color:#4caf50; }
+
+    /* MISC */
+    .btn { padding:8px 16px; border-radius:8px; border:none; font-size:.85rem; font-weight:600; cursor:pointer; }
+    .btn-primary { background:var(--accent); color:#1a1a2e; }
+    .btn-ghost { background:var(--card); color:var(--text); }
+    .spinner { width:28px; height:28px; border:3px solid var(--card); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; margin:40px auto; display:block; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .empty { color:var(--muted); text-align:center; padding:32px; font-size:.9rem; }
+
+    @media(max-width:480px) { .kpi .val { font-size:1.2rem; } }
+
+    @media print {
+      header, nav, .selector-mes .btn, #logout-btn { display:none !important; }
+      body { background:white; color:black; }
+      .kpi, .chart-card { border:1px solid #ccc; }
+      @page { size:A4 portrait; margin:1.5cm; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <h1>🥖 Admin Superior</h1>
+  <p style="color:var(--muted);font-size:.9rem">Acceso privado</p>
+  <input id="pin-input" type="password" maxlength="6" placeholder="PIN" autofocus>
+  <div id="pin-error">PIN incorrecto</div>
+  <button id="login-btn" onclick="verificarPIN()">Ingresar</button>
+</div>
+
+<!-- APP -->
+<div id="admin-app">
+  <header>
+    <h1>📊 Admin Superior — Panadería</h1>
+    <button id="logout-btn" class="btn btn-ghost" style="font-size:.78rem;padding:6px 12px" onclick="logout()">Salir</button>
+  </header>
+  <nav>
+    <button class="active" onclick="irSeccion('resumen',this)">Resumen</button>
+    <button onclick="irSeccion('ventas',this)">Ventas</button>
+    <button onclick="irSeccion('clientes',this)">Clientes</button>
+    <button onclick="irSeccion('devoluciones',this)">Devoluciones</button>
+    <button onclick="irSeccion('configuracion',this)">Config</button>
+  </nav>
+  <main>
+    <!-- RESUMEN -->
+    <div id="sec-resumen" class="seccion visible">
+      <div class="selector-mes">
+        <label>Mes:</label>
+        <input type="month" id="mes-sel" onchange="cargarTodo()">
+        <button class="btn btn-primary" onclick="cargarTodo()">Actualizar</button>
+        <button class="btn btn-ghost" onclick="exportarExcelAdmin()">📊 Descargar Excel</button>
+        <button class="btn btn-ghost" onclick="window.print()">📄 PDF</button>
+      </div>
+      <div id="kpi-grid" class="kpi-grid"></div>
+      <div class="chart-card">
+        <h3>Kg de Pan vendidos por día</h3>
+        <div class="chart-wrap"><canvas id="chart-pan"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Tortillas vendidas por día</h3>
+        <div class="chart-wrap"><canvas id="chart-tort"></canvas></div>
+      </div>
+    </div>
+
+    <!-- VENTAS -->
+    <div id="sec-ventas" class="seccion">
+      <div class="selector-mes" style="margin-bottom:16px">
+        <label>Mes:</label>
+        <input type="month" id="mes-ventas" onchange="renderTablaVentas()">
+      </div>
+      <div id="tabla-ventas"></div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div id="sec-clientes" class="seccion">
+      <div id="tabla-clientes"></div>
+    </div>
+
+    <!-- DEVOLUCIONES -->
+    <div id="sec-devoluciones" class="seccion">
+      <div id="tabla-devoluciones"></div>
+    </div>
+
+    <!-- CONFIGURACION -->
+    <div id="sec-configuracion" class="seccion">
+      <div class="chart-card">
+        <h3>Cambiar PIN de acceso</h3>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <input type="password" id="nuevo-pin" placeholder="Nuevo PIN (min 4 dígitos)" style="background:var(--card);border:1px solid var(--accent);border-radius:6px;padding:8px 12px;color:var(--text);font-size:.9rem">
+          <button class="btn btn-primary" onclick="cambiarPIN()">Guardar PIN</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyZrxYUKaNNJGi7TdkVI1fy3WzecLz5h9QrsQ3uYzu6k5qrp7zo9bBfKIg0FcKeAsGCnA/exec';
+const PIN_KEY = 'admin_pin';
+const DEFAULT_PIN = '1234';
+
+let historial    = [];
+let clientesData = [];
+let devData      = [];
+let charts       = {};
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function getPin() { return localStorage.getItem(PIN_KEY) || DEFAULT_PIN; }
+function cambiarPIN() {
+  const p = document.getElementById('nuevo-pin').value.trim();
+  if (p.length < 4) { alert('El PIN debe tener al menos 4 caracteres'); return; }
+  localStorage.setItem(PIN_KEY, p);
+  alert('✅ PIN actualizado');
+}
+function verificarPIN() {
+  const v = document.getElementById('pin-input').value;
+  if (v === getPin()) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('admin-app').style.display = 'block';
+    iniciar();
+  } else {
+    document.getElementById('pin-error').style.display = 'block';
+    document.getElementById('pin-input').value = '';
+  }
+}
+document.getElementById('pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') verificarPIN(); });
+function logout() { document.getElementById('admin-app').style.display='none'; document.getElementById('login-screen').style.display='flex'; }
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function apiGet(accion, params = {}) {
+  const body = JSON.stringify({ accion, ...params });
+  const res  = await fetch(API_URL, { method:'POST', body });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error);
+  return json.data;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function iniciar() {
+  const hoy = new Date();
+  const mes = hoy.toISOString().slice(0, 7);
+  document.getElementById('mes-sel').value = mes;
+  document.getElementById('mes-ventas').value = mes;
+  await cargarTodo();
+}
+
+async function cargarTodo() {
+  const mes = document.getElementById('mes-sel').value;
+  document.getElementById('kpi-grid').innerHTML = '<span class="spinner"></span>';
+  try {
+    [historial, clientesData, devData] = await Promise.all([
+      apiGet('listar_historial', { mes }),
+      apiGet('listar_clientes'),
+      apiGet('listar_devoluciones'),
+    ]);
+    renderResumen();
+    renderTablaVentas();
+    renderTablaClientes();
+    renderTablaDevoluciones();
+  } catch(err) {
+    document.getElementById('kpi-grid').innerHTML = `<p class="empty">Error al cargar: ${err.message}</p>`;
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function n(v) { const x = parseFloat(v); return isNaN(x) ? 0 : x; }
+function kgPan(r)  { return n(r.frances_kg)+n(r.minon_kg)+n(r.sanguchero_kg)+n(r.negro_kg); }
+function totTort(r){ return n(r.tort_fina)+n(r.tort_gruesa)+n(r.bollito)+n(r.cuernito_tomate); }
+function totFact(r){ return n(r.fact_crema)+n(r.media_luna)+n(r.sacra_vigilante); }
+function diaDe(r)  { return String(r.fecha_cierre||'').slice(0,10); }
+function nombreCliente(id) { return clientesData.find(c=>c.id===id)?.nombre || id; }
+function fmt(n, dec=1) { return n>0 ? (n%1===0?String(n):n.toFixed(dec)) : '—'; }
+
+// ── RESUMEN ───────────────────────────────────────────────────────────────────
+function renderResumen() {
+  const totalKg   = historial.reduce((s,r) => s+kgPan(r), 0);
+  const totalTort = historial.reduce((s,r) => s+totTort(r), 0);
+  const totalFact = historial.reduce((s,r) => s+totFact(r), 0);
+  const clientes  = new Set(historial.map(r=>r.cliente_id)).size;
+  const pedidos   = historial.length;
+  const devMes    = devData.filter(d => String(d.fecha||'').slice(0,7) === document.getElementById('mes-sel').value).length;
+
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi"><div class="val">${fmt(totalKg)}</div><div class="lbl">Kg Pan total</div></div>
+    <div class="kpi"><div class="val">${fmt(totalTort,0)}</div><div class="lbl">Tortillas total</div></div>
+    <div class="kpi"><div class="val">${fmt(totalFact,0)}</div><div class="lbl">Facturas total</div></div>
+    <div class="kpi"><div class="val">${clientes}</div><div class="lbl">Clientes activos</div></div>
+    <div class="kpi"><div class="val">${pedidos}</div><div class="lbl">Pedidos del mes</div></div>
+    <div class="kpi"><div class="val" style="color:var(--warning)">${devMes}</div><div class="lbl">Devoluciones</div></div>
+  `;
+
+  // Agrupar por día
+  const dias = {};
+  historial.forEach(r => {
+    const d = diaDe(r);
+    if (!dias[d]) dias[d] = { kg:0, tort:0 };
+    dias[d].kg   += kgPan(r);
+    dias[d].tort += totTort(r);
+  });
+  const labels = Object.keys(dias).sort();
+  const kgArr  = labels.map(d => dias[d].kg);
+  const tortArr= labels.map(d => dias[d].tort);
+
+  renderChart('chart-pan',  labels, kgArr,   'Kg Pan',      '#e8a838');
+  renderChart('chart-tort', labels, tortArr,  'Tortillas',   '#6bb8ff');
+}
+
+function renderChart(id, labels, data, label, color) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels.map(d => d.slice(5)),
+      datasets: [{ label, data, backgroundColor: color + '99', borderColor: color, borderWidth: 1 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#eaeaea', font:{size:11} } } },
+      scales: {
+        x: { ticks:{ color:'#9ab', font:{size:10} }, grid:{ color:'rgba(255,255,255,.05)' } },
+        y: { ticks:{ color:'#9ab', font:{size:10} }, grid:{ color:'rgba(255,255,255,.05)' }, beginAtZero:true }
+      }
+    }
+  });
+}
+
+// ── VENTAS POR CLIENTE ────────────────────────────────────────────────────────
+function renderTablaVentas() {
+  const mes = document.getElementById('mes-ventas').value;
+  const datos = historial.filter(r => String(r.fecha_cierre||'').slice(0,7) === mes);
+
+  const porCliente = {};
+  datos.forEach(r => {
+    if (!porCliente[r.cliente_id]) porCliente[r.cliente_id] = { kg:0, tort:0, fact:0, pedidos:0 };
+    porCliente[r.cliente_id].kg     += kgPan(r);
+    porCliente[r.cliente_id].tort   += totTort(r);
+    porCliente[r.cliente_id].fact   += totFact(r);
+    porCliente[r.cliente_id].pedidos++;
+  });
+
+  const filas = Object.entries(porCliente)
+    .sort((a,b) => b[1].kg - a[1].kg)
+    .map(([cid, v]) => `
+      <tr>
+        <td>${nombreCliente(cid)}</td>
+        <td style="text-align:center">${v.pedidos}</td>
+        <td style="text-align:center">${fmt(v.kg)}</td>
+        <td style="text-align:center">${fmt(v.tort,0)}</td>
+        <td style="text-align:center">${fmt(v.fact,0)}</td>
+      </tr>`).join('');
+
+  document.getElementById('tabla-ventas').innerHTML = filas.length ? `
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Cliente</th><th>Pedidos</th><th>Kg Pan</th><th>Tortillas</th><th>Facturas</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>` : `<p class="empty">Sin datos para el mes seleccionado</p>`;
+}
+
+// ── CLIENTES ──────────────────────────────────────────────────────────────────
+function renderTablaClientes() {
+  const hoy  = new Date();
+  const filas = clientesData
+    .filter(c => c.activo !== false && c.activo !== 'FALSE')
+    .sort((a,b) => (n(a.orden)||999)-(n(b.orden)||999))
+    .map(c => {
+      const fechaAlta = c.fecha_alta ? new Date(c.fecha_alta) : null;
+      const diasActivo = fechaAlta ? Math.floor((hoy-fechaAlta)/86400000) : null;
+      const totalKg = historial.filter(r=>r.cliente_id===c.id).reduce((s,r)=>s+kgPan(r),0);
+      return `
+        <tr>
+          <td>${c.nombre}</td>
+          <td>${c.grupo||'—'}</td>
+          <td>${c.telefono ? `<a href="https://wa.me/549${c.telefono.replace(/\D/g,'')}" target="_blank" style="color:var(--accent)">${c.telefono}</a>` : '—'}</td>
+          <td>${c.fecha_alta ? c.fecha_alta.slice(0,10) : '—'}</td>
+          <td style="text-align:center">${diasActivo !== null ? diasActivo + 'd' : '—'}</td>
+          <td style="text-align:center">${fmt(totalKg)}</td>
+        </tr>`;
+    }).join('');
+
+  document.getElementById('tabla-clientes').innerHTML = `
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Cliente</th><th>Grupo</th><th>WhatsApp</th><th>Fecha Alta</th><th>Antigüedad</th><th>Kg Totales (mes)</th></tr></thead>
+        <tbody>${filas||'<tr><td colspan="6" class="empty">Sin clientes</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── DEVOLUCIONES ──────────────────────────────────────────────────────────────
+function renderTablaDevoluciones() {
+  const filas = [...devData]
+    .sort((a,b) => String(b.hora_devolucion||'').localeCompare(String(a.hora_devolucion||'')))
+    .map(d => {
+      const kgDev = n(d.frances_dev)+n(d.minon_dev)+n(d.sanguchero_dev)+n(d.negro_dev);
+      const tortDev = n(d.tort_fina_dev)+n(d.tort_gruesa_dev)+n(d.bollito_dev)+n(d.cuernito_tomate_dev);
+      return `
+        <tr>
+          <td>${String(d.hora_devolucion||d.fecha||'').slice(0,16).replace('T',' ')}</td>
+          <td>${nombreCliente(d.cliente_id)}</td>
+          <td>${d.devuelto_por||'—'} (${d.rol_devuelto||''})</td>
+          <td style="text-align:center">${fmt(kgDev)}</td>
+          <td style="text-align:center">${fmt(tortDev,0)}</td>
+          <td>${d.motivo||'—'}</td>
+          <td><span class="badge-revisado badge-${d.revisado==='si'?'si':'no'}">${d.revisado==='si'?'Revisado':'Pendiente'}</span></td>
+        </tr>`;
+    }).join('');
+
+  document.getElementById('tabla-devoluciones').innerHTML = `
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Fecha/Hora</th><th>Cliente</th><th>Registrado por</th><th>Kg Dev.</th><th>Tort. Dev.</th><th>Motivo</th><th>Estado</th></tr></thead>
+        <tbody>${filas||'<tr><td colspan="7" class="empty">Sin devoluciones</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+function exportarExcelAdmin() {
+  const mes = document.getElementById('mes-sel').value;
+  const datos = historial.filter(r => String(r.fecha_cierre||'').slice(0,7) === mes);
+  if (!datos.length) { alert('Sin datos para exportar'); return; }
+
+  const hs = ['fecha_cierre','cliente','frances_kg','minon_kg','sanguchero_kg','negro_kg','tort_fina','tort_gruesa','bollito','cuernito_tomate','fact_crema','media_luna','sacra_vigilante','status'];
+  const filas = datos.map(r => [
+    r.fecha_cierre, nombreCliente(r.cliente_id),
+    r.frances_kg, r.minon_kg, r.sanguchero_kg, r.negro_kg,
+    r.tort_fina, r.tort_gruesa, r.bollito, r.cuernito_tomate,
+    r.fact_crema, r.media_luna, r.sacra_vigilante, r.status,
+  ]);
+  const csv = '﻿' + [hs, ...filas].map(r=>r.map(v=>`"${v??''}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a'); a.href=url; a.download=`informe_${mes}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function irSeccion(id, btn) {
+  document.querySelectorAll('.seccion').forEach(s => s.classList.remove('visible'));
+  document.getElementById('sec-' + id).classList.add('visible');
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+</script>
+</body>
+</html>

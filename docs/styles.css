@@ -184,8 +184,13 @@ header h1 { font-size: 1rem; color: var(--accent); flex: 1; white-space: nowrap;
 
 /* ── Alertas ── */
 .alerta { border-radius: 8px; padding: 10px 14px; font-size: .84rem; }
-.alerta-warning { background: #2a2000; border-left: 3px solid var(--warning); }
-.alerta-danger  { background: #2a0000; border-left: 3px solid var(--danger); }
+.alerta-warning    { background: #2a2000; border-left: 3px solid var(--warning); }
+.alerta-danger     { background: #2a0000; border-left: 3px solid var(--danger); }
+.alerta-devolucion { background: #2a1f00; border-left: 3px solid #f5c842; color: #f5c842; font-weight: 600; }
+
+.btn-devolucion { background: #3a2a00; color: #f5c842; border: 1px solid #f5c842; }
+.badge-devolucion { background: #3a2a00; color: #f5c842; }
+.btn-warning { background: #f5c842; color: #1a1a2e; }
 
 /* ── Misc ── */
 .offline-banner { background: var(--warning); color: #1a1a2e; text-align: center; padding: 6px; font-size: .82rem; font-weight: 600; }

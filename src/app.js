@@ -5,6 +5,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyZrxYUKaNNJGi7TdkVI1fy
 let estado = {
   rol: null, nombre: null,
   clientes: [], repartidores: [], precios: [], pedidos: [],
+  devoluciones: [],
   offline: false,
 };
 let filtroColumnas = 'ambos'; // 'pan' | 'tortillas' | 'ambos'
@@ -26,21 +27,25 @@ async function api(accion, datos = {}) {
 }
 
 async function cargarDatos() {
-  const [clientes, repartidores, precios, pedidos] = await Promise.all([
+  const [clientes, repartidores, precios, pedidos, devoluciones] = await Promise.all([
     api('listar_clientes'), api('listar_repartidores'),
     api('listar_precios'),  api('listar_pedidos'),
+    api('listar_devoluciones'),
   ]);
-  estado.clientes     = clientes     || [];
-  estado.repartidores = repartidores || [];
-  estado.precios      = precios      || [];
-  estado.pedidos      = pedidos      || [];
-  localStorage.setItem('cache_clientes', JSON.stringify(estado.clientes));
-  localStorage.setItem('cache_pedidos',  JSON.stringify(estado.pedidos));
+  estado.clientes      = clientes      || [];
+  estado.repartidores  = repartidores  || [];
+  estado.precios       = precios       || [];
+  estado.pedidos       = pedidos       || [];
+  estado.devoluciones  = devoluciones  || [];
+  localStorage.setItem('cache_clientes',     JSON.stringify(estado.clientes));
+  localStorage.setItem('cache_pedidos',      JSON.stringify(estado.pedidos));
+  localStorage.setItem('cache_devoluciones', JSON.stringify(estado.devoluciones));
 }
 
 function cargarDesdeCache() {
-  estado.clientes = JSON.parse(localStorage.getItem('cache_clientes') || '[]');
-  estado.pedidos  = JSON.parse(localStorage.getItem('cache_pedidos')  || '[]');
+  estado.clientes     = JSON.parse(localStorage.getItem('cache_clientes')     || '[]');
+  estado.pedidos      = JSON.parse(localStorage.getItem('cache_pedidos')      || '[]');
+  estado.devoluciones = JSON.parse(localStorage.getItem('cache_devoluciones') || '[]');
 }
 
 // ─── Cálculos ─────────────────────────────────────────────────────────────────
@@ -161,7 +166,8 @@ function renderPlanilla() {
     tort: activos.reduce((s,p)=>s+totTortillas(p),0),
   };
 
-  const cancelados = estado.pedidos.filter(p=>p.status==='cancelado').length;
+  const cancelados    = estado.pedidos.filter(p=>p.status==='cancelado').length;
+  const devNoRevisadas = estado.devoluciones.filter(d=>d.revisado==='no'||d.revisado===false).length;
 
   document.querySelector('#app').innerHTML = `
     <div id="app-inner">
@@ -177,6 +183,7 @@ function renderPlanilla() {
         <button class="btn btn-ghost btn-sm" onclick="cerrarSesion()">Salir</button>
       </header>
 
+      ${devNoRevisadas>0 ? `<div class="alerta alerta-devolucion" style="margin:6px 8px 0">⚠️ ${devNoRevisadas} devolución(es) sin revisar</div>` : ''}
       ${cancelados>0 ? `<div class="alerta alerta-danger" style="margin:6px 8px 0">🚫 ${cancelados} pedido(s) cancelado(s)</div>` : ''}
       <div class="rol-badge-bar">👤 ${estado.nombre}</div>
 
@@ -267,8 +274,12 @@ function renderFila(cliente, pedido, idx, showPan, showTort) {
   } else if (st === 'embolsado') {
     estadoCell = `<span class="badge badge-embolsado">✅ ${pedido.embolsador||''}</span>`;
     if (esRep) estadoCell += ` <button class="btn-xs btn-success" onclick="marcarEntregado('${pedido.id}')">Entregado</button>`;
+    if (esRep || esEnc) estadoCell += ` <button class="btn-xs btn-devolucion" onclick="abrirModalDevolucion('${pedido.id}')">↩</button>`;
   } else if (st === 'entregado') {
-    estadoCell = `<span class="badge badge-entregado">🚚 ${pedido.repartidor_entrega||estado.nombre}</span>`;
+    const devs = estado.devoluciones.filter(d=>d.pedido_id===pedido.id);
+    estadoCell = `<span class="badge badge-entregado">🚚 ${pedido.repartidor_entrega||''}</span>`;
+    if (devs.length) estadoCell += ` <span class="badge badge-devolucion">↩${devs.length}</span>`;
+    if (esRep || esEnc) estadoCell += ` <button class="btn-xs btn-devolucion" onclick="abrirModalDevolucion('${pedido.id}')">↩</button>`;
   } else if (st === 'cancelado') {
     estadoCell = '<span class="badge badge-cancelado">Cancelado</span>';
   }
@@ -679,6 +690,104 @@ function descargarCSVCierre(pedidos, nombre) {
   a.href=url; a.download=nombre; a.click(); URL.revokeObjectURL(url);
 }
 
+// ─── Devoluciones ────────────────────────────────────────────────────────────
+function abrirModalDevolucion(pedidoId) {
+  const pedido  = estado.pedidos.find(p => p.id === pedidoId);
+  const cliente = estado.clientes.find(c => c.id === pedido?.cliente_id);
+  if (!pedido || !cliente) return;
+
+  function campoDevRow(label, campo, original) {
+    if (!n(original)) return '';
+    return `
+      <tr>
+        <td style="padding:6px 4px;font-size:.85rem">${label}</td>
+        <td style="padding:6px 4px;text-align:center;color:var(--accent)">${displayNum(original)}</td>
+        <td style="padding:6px 4px">
+          <input type="number" id="dev_${campo}" min="0" max="${n(original)}" step="0.5"
+            style="width:4rem;text-align:center;background:var(--card);color:var(--text);border:1px solid var(--accent);border-radius:4px;padding:3px 6px">
+        </td>
+      </tr>`;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-devolucion';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
+  modal.innerHTML = `
+    <div class="card" style="max-width:420px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-weight:700;color:var(--accent)">↩ Devolución — ${cliente.nombre}</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-devolucion').remove()">✕</button>
+      </div>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:12px">Ingresá las cantidades devueltas (máx = pedido original)</p>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;font-size:.75rem;color:var(--text-muted);padding:4px">Producto</th>
+          <th style="font-size:.75rem;color:var(--text-muted);padding:4px">Pedido</th>
+          <th style="font-size:.75rem;color:var(--text-muted);padding:4px">Devuelve</th>
+        </tr></thead>
+        <tbody>
+          ${campoDevRow('Francés (kg)',    'frances_kg',         pedido.frances_kg)}
+          ${campoDevRow('Miñón (kg)',      'minon_kg',           pedido.minon_kg)}
+          ${campoDevRow('Sanguchero (kg)', 'sanguchero_kg',      pedido.sanguchero_kg)}
+          ${campoDevRow('Negro (kg)',      'negro_kg',           pedido.negro_kg)}
+          ${campoDevRow('T. Fina',         'tort_fina',          pedido.tort_fina)}
+          ${campoDevRow('T. Gruesa',       'tort_gruesa',        pedido.tort_gruesa)}
+          ${campoDevRow('Bollito',         'bollito',            pedido.bollito)}
+          ${campoDevRow('Cuernito-Tomate', 'cuernito_tomate',    pedido.cuernito_tomate)}
+          ${campoDevRow('Fact. Crema',     'fact_crema',         pedido.fact_crema)}
+          ${campoDevRow('Media Luna',      'media_luna',         pedido.media_luna)}
+          ${campoDevRow('Sacra-Vigilante', 'sacra_vigilante',    pedido.sacra_vigilante)}
+        </tbody>
+      </table>
+      <div class="form-group" style="margin-top:12px">
+        <label>Motivo (opcional)</label>
+        <input type="text" id="dev_motivo" placeholder="Ej: no le gustó el sanguchero...">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('modal-devolucion').remove()">Cancelar</button>
+        <button class="btn btn-warning" style="flex:1" onclick="confirmarDevolucion('${pedidoId}')">Registrar devolución</button>
+      </div>
+    </div>`;
+
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+}
+
+async function confirmarDevolucion(pedidoId) {
+  const pedido = estado.pedidos.find(p => p.id === pedidoId);
+  if (!pedido) return;
+
+  const campos = ['frances_kg','minon_kg','sanguchero_kg','negro_kg',
+                  'tort_fina','tort_gruesa','bollito','cuernito_tomate',
+                  'fact_crema','media_luna','sacra_vigilante'];
+  const devCampos = ['frances_dev','minon_dev','sanguchero_dev','negro_dev',
+                     'tort_fina_dev','tort_gruesa_dev','bollito_dev','cuernito_tomate_dev',
+                     'fact_crema_dev','media_luna_dev','sacra_vigilante_dev'];
+
+  const datos = { pedido_id: pedidoId, cliente_id: pedido.cliente_id, motivo: document.getElementById('dev_motivo')?.value || '' };
+  let totalDev = 0;
+
+  campos.forEach((campo, i) => {
+    const input = document.getElementById('dev_' + campo);
+    const val = input ? n(input.value) : 0;
+    datos[devCampos[i]] = val;
+    totalDev += val;
+  });
+
+  if (totalDev === 0) { alert('Ingresá al menos una cantidad a devolver'); return; }
+
+  datos.monto_devolucion = 0; // Se puede calcular con precios si están cargados
+  datos.devuelto_por = estado.nombre;
+  datos.rol_devuelto = estado.rol;
+
+  try {
+    await api('registrar_devolucion', datos);
+    document.getElementById('modal-devolucion')?.remove();
+    alert('✅ Devolución registrada. La encargada y el administrador serán notificados.');
+    await renderPantallaPrincipal();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('online',  () => { renderOfflineBanner(false); renderPantallaPrincipal(); });
 window.addEventListener('offline', () => renderOfflineBanner(true));
@@ -705,4 +814,5 @@ Object.assign(window, {
   marcarEntregado, cancelarPedidoFila, abrirModalCliente, guardarCliente,
   confirmarReorden, exportarPDF, exportarExcel,
   cerrarDia, cerrarModalCierre, exportarPDFSinModal, toggleTodos, confirmarCierreDia,
+  abrirModalDevolucion, confirmarDevolucion,
 });
