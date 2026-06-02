@@ -355,14 +355,14 @@ function cancelarPedido(id) {
 }
 
 function guardarCliente(datos) {
-  const hoja = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('clientes');
+  const hoja  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('clientes');
+  const vals  = hoja.getDataRange().getValues();
+  const heads = vals[0];
+  const idIdx = heads.indexOf('id');
+
   if (datos.id) {
-    // update
-    const vals  = hoja.getDataRange().getValues();
-    const heads = vals[0];
-    const idIdx = heads.indexOf('id');
     for (let i = 1; i < vals.length; i++) {
-      if (vals[i][idIdx] === datos.id) {
+      if (String(vals[i][idIdx]) === String(datos.id)) {
         Object.entries(datos).forEach(([key, val]) => {
           const col = heads.indexOf(key);
           if (col >= 0) hoja.getRange(i + 1, col + 1).setValue(val);
@@ -371,13 +371,24 @@ function guardarCliente(datos) {
       }
     }
   }
-  // insert — asignar orden al final
-  const id = 'cli_' + Date.now();
-  const todosClientes = hojaAObjetos('clientes');
-  const maxOrden = todosClientes.reduce((m, c) => Math.max(m, Number(c.orden) || 0), 0);
+
+  const id        = 'cli_' + Date.now();
+  const todos     = hojaAObjetos('clientes');
+  const maxOrden  = todos.reduce((m, c) => Math.max(m, Number(c.orden) || 0), 0);
   const fechaAlta = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  hoja.appendRow([id, datos.nombre, datos.grupo, datos.repartidor_id, datos.retira_local || false, true,
-                  datos.telefono || '', fechaAlta, maxOrden + 1]);
+
+  // Construir fila respetando el orden real de columnas del sheet
+  const fila = heads.map(h => {
+    const map = {
+      id, nombre: datos.nombre || '', grupo: datos.grupo || 'IONA',
+      repartidor_id: datos.repartidor_id || '', retira_local: false, activo: true,
+      telefono: datos.telefono || '', fecha_alta: fechaAlta,
+      orden: maxOrden + 1, direccion: datos.direccion || '', gps: datos.gps || '',
+    };
+    return map[h] !== undefined ? map[h] : '';
+  });
+
+  hoja.appendRow(fila);
   return { id };
 }
 

@@ -9,7 +9,7 @@ let estado = {
   offline: false,
 };
 let filtroColumnas = 'ambos'; // 'pan' | 'tortillas' | 'ambos'
-let dragState = null;
+let moveMode = { active: false, fromIdx: null };
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 async function api(accion, datos = {}) {
@@ -294,7 +294,7 @@ function renderFila(cliente, pedido, idx, showPan, showTort) {
   const p = pedido || {};
   return `
     <tr class="${rowClass}" data-idx="${idx}" data-cid="${cid}">
-      <td class="td-drag ${esEnc?'td-drag-enc':''}" data-idx="${idx}">${idx+1}${esEnc?' ☰':''}</td>
+      <td class="td-drag ${esEnc?'td-drag-enc':''}" data-idx="${idx}" ${esEnc?`onclick="tapMover(${idx})"`:''}>${idx+1}${esEnc?'<br><span style="font-size:.6rem;opacity:.6">✥</span>':''}</td>
       <td class="td-cliente sticky-col">${cliente.nombre}</td>
       ${showPan ? `
         <td class="td-kg">${pedido ? displayNum(kgPan(p)) : ''}</td>
@@ -419,28 +419,28 @@ function abrirModalCliente(clienteId) {
   const c = clienteId ? estado.clientes.find(x => x.id === clienteId) : null;
   const modal = document.createElement('div');
   modal.id = 'modal-cliente';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:500;overflow-y:auto';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:flex-start;justify-content:center;z-index:500;overflow-y:auto;padding:16px';
   modal.innerHTML = `
-    <div class="card" style="width:90%;max-width:400px;margin:16px auto">
+    <div class="card" style="width:100%;max-width:400px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <span style="font-weight:700">${c ? 'Editar Cliente' : 'Nuevo Cliente'}</span>
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('#modal-cliente').remove()">✕</button>
+        <span style="font-weight:700;color:var(--accent)">${c ? 'Editar Cliente' : 'Nuevo Cliente'}</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-cliente').remove()">✕</button>
       </div>
       <div class="form-group">
-        <label>Nombre</label>
-        <input id="mc-nombre" type="text" value="${c?.nombre||''}">
+        <label>Nombre *</label>
+        <input id="mc-nombre" type="text" value="${c?.nombre||''}" placeholder="Nombre o alias del cliente">
       </div>
       <div class="form-group">
-        <label>Grupo</label>
-        <select id="mc-grupo">
-          ${['IONA','SanJuan','Pascual','Milton','Gaston','Mariana','PedidosChicos'].map(g=>`<option ${(c?.grupo||'IONA')===g?'selected':''}>${g}</option>`).join('')}
-        </select>
+        <label>WhatsApp</label>
+        <input id="mc-tel" type="tel" value="${c?.telefono||''}" placeholder="Ej: 3516001234">
       </div>
       <div class="form-group">
-        <label>Repartidor</label>
-        <select id="mc-rep">
-          ${estado.repartidores.map(r=>`<option value="${r.id}" ${c?.repartidor_id===r.id?'selected':''}>${r.nombre}</option>`).join('')}
-        </select>
+        <label>Dirección</label>
+        <input id="mc-dir" type="text" value="${c?.direccion||''}" placeholder="Calle y número">
+      </div>
+      <div class="form-group">
+        <label>GPS (link Google Maps o coordenadas)</label>
+        <input id="mc-gps" type="text" value="${c?.gps||''}" placeholder="https://maps.google.com/...">
       </div>
       <button class="btn btn-primary btn-full" onclick="guardarCliente('${c?.id||''}')">Guardar</button>
     </div>`;
@@ -452,11 +452,13 @@ async function guardarCliente(id) {
   const nombre = document.getElementById('mc-nombre').value.trim();
   if (!nombre) { alert('Ingresá el nombre'); return; }
   const datos = {
-    id: id || undefined,
+    id:           id || undefined,
     nombre,
-    grupo:        document.getElementById('mc-grupo').value,
-    repartidor_id:document.getElementById('mc-rep').value,
+    grupo:        'IONA',
     retira_local: false,
+    telefono:     document.getElementById('mc-tel')?.value.trim() || '',
+    direccion:    document.getElementById('mc-dir')?.value.trim() || '',
+    gps:          document.getElementById('mc-gps')?.value.trim() || '',
   };
   try {
     await api('guardar_cliente', datos);
@@ -465,67 +467,33 @@ async function guardarCliente(id) {
   } catch (err) { alert('Error: ' + err.message); }
 }
 
-// ─── Drag & Drop (solo encargada) ─────────────────────────────────────────────
-function initDragAndDrop() {
-  const tbody = document.getElementById('planilla-body');
-  if (!tbody) return;
+// ─── Reordenar por tap (solo encargada) ───────────────────────────────────────
+function initDragAndDrop() { /* no-op, replaced by tapMover */ }
 
-  let dragIdx = null, ghost = null, longPressTimer = null;
-  let isDragging = false, startX = 0, startY = 0;
+function tapMover(idx) {
+  if (!moveMode.active) {
+    // Primer tap: seleccionar fila origen
+    moveMode = { active: true, fromIdx: idx };
+    document.querySelectorAll('tr[data-idx]').forEach(tr => tr.classList.remove('move-source','move-target'));
+    document.querySelector(`tr[data-idx="${idx}"]`)?.classList.add('move-source');
+    // Resaltar todas las demás como destino posible
+    document.querySelectorAll(`tr[data-idx]:not([data-idx="${idx}"])`).forEach(tr => tr.classList.add('move-target'));
+    return;
+  }
+  if (moveMode.fromIdx === idx) {
+    // Tap en la misma fila: cancelar
+    cancelarMover();
+    return;
+  }
+  // Segundo tap: confirmar movimiento
+  const from = moveMode.fromIdx;
+  cancelarMover();
+  confirmarReorden(from, idx);
+}
 
-  tbody.addEventListener('touchstart', e => {
-    const handle = e.target.closest('.td-drag-enc');
-    if (!handle) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    const idx = parseInt(handle.dataset.idx);
-
-    longPressTimer = setTimeout(() => {
-      isDragging = true;
-      dragIdx = idx;
-      handle.closest('tr').style.opacity = '0.4';
-      ghost = document.createElement('div');
-      ghost.className = 'drag-ghost';
-      ghost.textContent = clientesIONA()[idx]?.nombre || '';
-      ghost.style.left = startX + 'px';
-      ghost.style.top  = (startY - 35) + 'px';
-      document.body.append(ghost);
-      if (navigator.vibrate) navigator.vibrate(60);
-    }, 350);
-  }, { passive: true });
-
-  tbody.addEventListener('touchmove', e => {
-    const t = e.touches[0];
-    // Si el dedo se mueve mucho antes del long press, cancelar
-    if (!isDragging) {
-      if (Math.abs(t.clientX - startX) > 18 || Math.abs(t.clientY - startY) > 18) {
-        clearTimeout(longPressTimer); longPressTimer = null;
-      }
-      return;
-    }
-    e.preventDefault();
-    ghost.style.left = t.clientX + 'px';
-    ghost.style.top  = (t.clientY - 35) + 'px';
-    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-    const el = document.elementFromPoint(t.clientX, t.clientY);
-    const tr = el?.closest('tr[data-idx]');
-    if (tr && parseInt(tr.dataset.idx) !== dragIdx) tr.classList.add('drag-over');
-  }, { passive: false });
-
-  tbody.addEventListener('touchend', async e => {
-    clearTimeout(longPressTimer); longPressTimer = null;
-    if (ghost) { ghost.remove(); ghost = null; }
-    tbody.querySelectorAll('tr').forEach(r => { r.classList.remove('drag-over'); r.style.opacity = ''; });
-    if (!isDragging) { isDragging = false; dragIdx = null; return; }
-
-    const t = e.changedTouches[0];
-    const el = document.elementFromPoint(t.clientX, t.clientY);
-    const tr = el?.closest('tr[data-idx]');
-    const overIdx = tr ? parseInt(tr.dataset.idx) : null;
-    const from = dragIdx;
-    isDragging = false; dragIdx = null;
-    if (overIdx !== null && overIdx !== from) await confirmarReorden(from, overIdx);
-  }, { passive: true });
+function cancelarMover() {
+  moveMode = { active: false, fromIdx: null };
+  document.querySelectorAll('tr[data-idx]').forEach(tr => tr.classList.remove('move-source','move-target'));
 }
 
 async function confirmarReorden(fromIdx, toIdx) {
@@ -815,4 +783,5 @@ Object.assign(window, {
   confirmarReorden, exportarPDF, exportarExcel,
   cerrarDia, cerrarModalCierre, exportarPDFSinModal, toggleTodos, confirmarCierreDia,
   abrirModalDevolucion, confirmarDevolucion,
+  tapMover, cancelarMover,
 });
