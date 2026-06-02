@@ -135,6 +135,11 @@ function manejarRequest(e) {
     switch (accion) {
       case 'listar_clientes':     resultado = listarClientes();            break;
       case 'listar_repartidores': resultado = listarRepartidores();        break;
+      case 'listar_embolsadores': resultado = listarEmbolsadores();        break;
+      case 'guardar_repartidor':  resultado = guardarPersonal(datos, 'repartidores'); break;
+      case 'guardar_embolsador':  resultado = guardarPersonal(datos, 'embolsadores'); break;
+      case 'eliminar_repartidor': resultado = eliminarPersonal(datos.id, 'repartidores'); break;
+      case 'eliminar_embolsador': resultado = eliminarPersonal(datos.id, 'embolsadores'); break;
       case 'listar_precios':      resultado = listarPrecios();             break;
       case 'listar_pedidos':      resultado = listarPedidos(datos.fecha);  break;
       case 'crear_pedido':        resultado = crearPedido(datos);          break;
@@ -486,6 +491,47 @@ function marcarDevolucionRevisada(id) {
 function listarHistorial(mes) {
   const todos = hojaAObjetos('historial');
   if (!mes) return todos;
-  // mes formato: "2026-05"
   return todos.filter(r => String(r.fecha_cierre).slice(0, 7) === mes);
+}
+
+// ─── Personal (embolsadores y repartidores) ───────────────────────────────────
+
+function listarEmbolsadores() {
+  const hoja = obtenerOCrearHoja(SpreadsheetApp.getActiveSpreadsheet(), 'embolsadores', ['id','nombre']);
+  return hojaAObjetos('embolsadores');
+}
+
+function guardarPersonal(datos, nombreHoja) {
+  const ss   = SpreadsheetApp.getActiveSpreadsheet();
+  const hoja = obtenerOCrearHoja(ss, nombreHoja, ['id','nombre']);
+  const vals = hoja.getDataRange().getValues();
+  const heads= vals[0];
+  const idIdx= heads.indexOf('id');
+
+  if (datos.id) {
+    for (let i = 1; i < vals.length; i++) {
+      if (String(vals[i][idIdx]) === String(datos.id)) {
+        const nomIdx = heads.indexOf('nombre');
+        if (nomIdx >= 0) hoja.getRange(i + 1, nomIdx + 1).setValue(datos.nombre);
+        return { actualizado: datos.id };
+      }
+    }
+  }
+  const id = nombreHoja.slice(0, 3) + '_' + Date.now();
+  hoja.appendRow([id, datos.nombre]);
+  return { id };
+}
+
+function eliminarPersonal(id, nombreHoja) {
+  const hoja = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombreHoja);
+  if (!hoja) return { ok: false };
+  const vals  = hoja.getDataRange().getValues();
+  const idIdx = vals[0].indexOf('id');
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][idIdx]) === String(id)) {
+      hoja.deleteRow(i + 1);
+      return { ok: true };
+    }
+  }
+  return { ok: false };
 }

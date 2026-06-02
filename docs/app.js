@@ -4,7 +4,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzUbVdXj1ikznvHOU8o5Hp8
 // ─── Estado global ────────────────────────────────────────────────────────────
 let estado = {
   rol: null, nombre: null,
-  clientes: [], repartidores: [], precios: [], pedidos: [],
+  clientes: [], repartidores: [], embolsadores: [], precios: [], pedidos: [],
   devoluciones: [],
   offline: false,
 };
@@ -27,13 +27,15 @@ async function api(accion, datos = {}) {
 }
 
 async function cargarDatos() {
-  const [clientes, repartidores, precios, pedidos, devoluciones] = await Promise.all([
+  const [clientes, repartidores, embolsadores, precios, pedidos, devoluciones] = await Promise.all([
     api('listar_clientes'), api('listar_repartidores'),
+    api('listar_embolsadores').catch(() => []),
     api('listar_precios'),  api('listar_pedidos'),
-    api('listar_devoluciones'),
+    api('listar_devoluciones').catch(() => []),
   ]);
   estado.clientes      = clientes      || [];
   estado.repartidores  = repartidores  || [];
+  estado.embolsadores  = embolsadores  || [];
   estado.precios       = precios       || [];
   estado.pedidos       = pedidos       || [];
   estado.devoluciones  = devoluciones  || [];
@@ -92,7 +94,8 @@ function renderLogin() {
 async function elegirRol(rol) {
   let nombre = rol.charAt(0).toUpperCase() + rol.slice(1);
   if (rol === 'embolsador') {
-    nombre = await mostrarSelector(['Embolsador 1', 'Embolsador 2']);
+    const ops = estado.embolsadores.length ? estado.embolsadores.map(e=>e.nombre) : ['Embolsador 1','Embolsador 2'];
+    nombre = await mostrarSelector(ops);
     if (!nombre) return;
   } else if (rol === 'repartidor') {
     const ops = estado.repartidores.length ? estado.repartidores.map(r=>r.nombre) : ['Repartidor 1','Repartidor 2'];
@@ -178,6 +181,7 @@ function renderPlanilla() {
           <button class="${filtroColumnas==='tortillas'?'active':''}" onclick="setFiltro('tortillas')">Tort.</button>
           <button class="${filtroColumnas==='ambos'?'active':''}" onclick="setFiltro('ambos')">Todo</button>
         </div>
+        ${(esEnc||esAdmin) ? `<button class="btn-icon" title="Gestionar personal" onclick="abrirModalPersonal()">👥</button>` : ''}
         <button class="btn-icon" title="PDF" onclick="exportarPDF()">📄</button>
         <button class="btn-icon" title="Excel" onclick="exportarExcel()">📊</button>
         <button class="btn btn-ghost btn-sm" onclick="cerrarSesion()">Salir</button>
@@ -658,6 +662,85 @@ function descargarCSVCierre(pedidos, nombre) {
   a.href=url; a.download=nombre; a.click(); URL.revokeObjectURL(url);
 }
 
+// ─── Gestionar Personal ───────────────────────────────────────────────────────
+function abrirModalPersonal() {
+  renderModalPersonal('embolsadores');
+}
+
+function renderModalPersonal(tab) {
+  const esEmb = tab === 'embolsadores';
+  const lista = esEmb ? estado.embolsadores : estado.repartidores;
+  const accionGuardar   = esEmb ? 'guardar_embolsador'  : 'guardar_repartidor';
+  const accionEliminar  = esEmb ? 'eliminar_embolsador' : 'eliminar_repartidor';
+  const listaKey        = esEmb ? 'embolsadores'        : 'repartidores';
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-personal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:400px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-weight:700;color:var(--accent)">👥 Personal</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-personal').remove()">✕</button>
+      </div>
+      <div class="tabs" style="margin-bottom:14px">
+        <button class="tab ${esEmb?'active':''}" onclick="renderModalPersonal('embolsadores')">Embolsadores</button>
+        <button class="tab ${!esEmb?'active':''}" onclick="renderModalPersonal('repartidores')">Repartidores</button>
+      </div>
+      <div id="lista-personal">
+        ${lista.map(p => `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--card)">
+            <span style="flex:1">${p.nombre}</span>
+            <button class="btn-xs btn-ghost" onclick="editarPersonal('${p.id}','${p.nombre}','${tab}')">✏️</button>
+            <button class="btn-xs btn-danger" onclick="eliminarPersonal('${p.id}','${p.nombre}','${tab}')">🗑</button>
+          </div>`).join('') || '<p style="color:var(--text-muted);font-size:.85rem;padding:8px 0">Sin registros</p>'}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <input id="nuevo-personal-nombre" type="text" placeholder="Nombre..." style="flex:1;background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;color:var(--text)">
+        <button class="btn btn-primary" onclick="agregarPersonal('${tab}')">+ Agregar</button>
+      </div>
+    </div>`;
+
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+}
+
+async function agregarPersonal(tab) {
+  const nombre = document.getElementById('nuevo-personal-nombre')?.value.trim();
+  if (!nombre) { alert('Ingresá un nombre'); return; }
+  const accion = tab === 'embolsadores' ? 'guardar_embolsador' : 'guardar_repartidor';
+  try {
+    const res = await api(accion, { nombre });
+    const key = tab === 'embolsadores' ? 'embolsadores' : 'repartidores';
+    estado[key].push({ id: res.id, nombre });
+    renderModalPersonal(tab);
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function editarPersonal(id, nombreActual, tab) {
+  const nuevo = prompt('Nuevo nombre:', nombreActual);
+  if (!nuevo || nuevo === nombreActual) return;
+  const accion = tab === 'embolsadores' ? 'guardar_embolsador' : 'guardar_repartidor';
+  try {
+    await api(accion, { id, nombre: nuevo });
+    const key = tab === 'embolsadores' ? 'embolsadores' : 'repartidores';
+    const item = estado[key].find(x => x.id === id);
+    if (item) item.nombre = nuevo;
+    renderModalPersonal(tab);
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function eliminarPersonal(id, nombre, tab) {
+  if (!confirm(`¿Eliminar "${nombre}"?`)) return;
+  const accion = tab === 'embolsadores' ? 'eliminar_embolsador' : 'eliminar_repartidor';
+  try {
+    await api(accion, { id });
+    const key = tab === 'embolsadores' ? 'embolsadores' : 'repartidores';
+    estado[key] = estado[key].filter(x => x.id !== id);
+    renderModalPersonal(tab);
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
 // ─── Devoluciones ────────────────────────────────────────────────────────────
 function abrirModalDevolucion(pedidoId) {
   const pedido  = estado.pedidos.find(p => p.id === pedidoId);
@@ -784,4 +867,5 @@ Object.assign(window, {
   cerrarDia, cerrarModalCierre, exportarPDFSinModal, toggleTodos, confirmarCierreDia,
   abrirModalDevolucion, confirmarDevolucion,
   tapMover, cancelarMover,
+  abrirModalPersonal, renderModalPersonal, agregarPersonal, editarPersonal, eliminarPersonal,
 });
