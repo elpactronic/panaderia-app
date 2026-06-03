@@ -215,8 +215,8 @@ function renderPlanilla() {
           <button class="${filtroColumnas==='ambos'?'active':''}" onclick="setFiltro('ambos')">Todo</button>
         </div>` : ''}
         ${(esEnc||esAdmin) ? `<button class="btn-icon" title="Gestionar personal" onclick="abrirModalPersonal()">👥</button>` : ''}
-        <button class="btn-icon" title="PDF" onclick="exportarPDF()">📄</button>
-        <button class="btn-icon" title="Excel" onclick="exportarExcel()">📊</button>
+        ${esAdmin ? `<button class="btn-icon" title="PDF" onclick="exportarPDF()">📄</button>` : ''}
+        ${esAdmin ? `<button class="btn-icon" title="Excel" onclick="exportarExcel()">📊</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="cerrarSesion()">Salir</button>
       </header>
 
@@ -675,12 +675,12 @@ async function cerrarDia() {
     <div class="card" style="max-width:480px;margin:0 auto">
       <h2 style="color:var(--accent);margin-bottom:4px">Cerrar Día — ${(estado.planillas.find(p=>p.id===estado.planillaActiva)||{nombre:estado.planillaActiva}).nombre}</h2>
       <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">
-        Primero descargá la copia del día, luego elegí qué clientes mantener para mañana.
+        Elegí qué clientes mantener para mañana.
       </p>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      ${estado.rol === 'admin' ? `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-ghost" style="flex:1" onclick="exportarExcel()">📊 Excel</button>
         <button class="btn btn-ghost" style="flex:1" onclick="exportarPDFSinModal()">📄 PDF</button>
-      </div>
+      </div>` : ''}
       <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:8px">Clientes para mañana:</p>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn btn-ghost btn-sm" onclick="toggleTodos(true)">Marcar todos</button>
@@ -732,13 +732,9 @@ async function confirmarCierreDia() {
   if (!confirm(`¿Confirmar cierre del día?\n${mantener.length} cliente(s) se mantendrán para mañana.`)) return;
 
   try {
-    const resultado = await api('cerrar_dia', { mantener_ids: mantener, grupo: estado.planillaActiva });
+    await api('cerrar_dia', { mantener_ids: mantener, grupo: estado.planillaActiva });
     document.getElementById('modal-container').innerHTML = '';
-    const b = resultado.backup;
-    const msg = b
-      ? `✅ Día cerrado.\nBackup guardado en Google Drive:\n📁 ${b.carpeta} → ${b.archivo}`
-      : `✅ Día cerrado.\n⚠️ Backup en Drive falló: ${resultado.backup_error || 'error desconocido'}`;
-    alert(msg);
+    alert('✅ Día cerrado.');
     await renderPantallaPrincipal();
   } catch (err) { alert('Error al cerrar: ' + err.message); }
 }

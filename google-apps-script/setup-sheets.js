@@ -316,46 +316,10 @@ function cerrarDia(mantenerIds, grupo) {
       });
   }
 
-  // Guardar backup en carpeta backupAppPan del Drive de esta cuenta
-  let backupInfo  = null;
-  let backupError = null;
-  try {
-    backupInfo = _guardarBackupEnDrive(pedidosGrupo, headers, grupo, fechaCierre, tz);
-  } catch (e) {
-    backupError = e.message;
-    Logger.log('Backup Drive falló: ' + e.message);
-  }
-
   return {
     cierre_num:   cierreNum,
     fecha_cierre: fechaCierre,
-    backup:       backupInfo,
-    backup_error: backupError,
   };
-}
-
-function _guardarBackupEnDrive(filas, headers, grupo, fechaCierre, tz) {
-  const fecha  = fechaCierre.slice(0, 10);
-  const nombre = 'backup_' + grupo + '_' + fecha + '.csv';
-
-  const headerRow = headers.map(function(h) { return '"' + String(h) + '"'; }).join(',');
-  const dataRows  = filas.map(function(f) {
-    return headers.map(function(_, i) {
-      var val = f[i];
-      if (val instanceof Date) {
-        val = Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
-      }
-      return '"' + String(val === null || val === undefined ? '' : val).replace(/"/g, '""') + '"';
-    }).join(',');
-  });
-
-  var csv = '﻿' + [headerRow].concat(dataRows).join('\n');
-
-  var it     = DriveApp.getFoldersByName('backupAppPan');
-  var folder = it.hasNext() ? it.next() : DriveApp.createFolder('backupAppPan');
-  folder.createFile(nombre, csv, 'text/csv');
-
-  return { archivo: nombre, carpeta: 'backupAppPan' };
 }
 
 // ─── Helpers de escritura ──────────────────────────────────────────────────────
@@ -603,15 +567,6 @@ function _migrarColumnaGrupo(hoja, posicion) {
   cell.setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
   if (hoja.getLastRow() > 1) hoja.getRange(2, posicion, hoja.getLastRow() - 1, 1).setValue('IONA');
   Logger.log('✅ ' + hoja.getName() + ': columna grupo insertada.');
-}
-
-// ─── Test Drive (ejecutar una vez para autorizar acceso a Drive) ──────────────
-
-function testDrive() {
-  const carpeta = DriveApp.getFoldersByName('backupAppPan').hasNext()
-    ? DriveApp.getFoldersByName('backupAppPan').next()
-    : DriveApp.createFolder('backupAppPan');
-  Logger.log('✅ Drive OK. Carpeta: ' + carpeta.getName() + ' — ID: ' + carpeta.getId());
 }
 
 // ─── Planillas ────────────────────────────────────────────────────────────────
