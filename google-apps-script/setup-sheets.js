@@ -317,10 +317,12 @@ function cerrarDia(mantenerIds, grupo) {
   }
 
   // Guardar backup en carpeta backupAppPan del Drive de esta cuenta
-  let backupInfo = null;
+  let backupInfo  = null;
+  let backupError = null;
   try {
     backupInfo = _guardarBackupEnDrive(pedidosGrupo, headers, grupo, fechaCierre, tz);
   } catch (e) {
+    backupError = e.message;
     Logger.log('Backup Drive falló: ' + e.message);
   }
 
@@ -328,6 +330,7 @@ function cerrarDia(mantenerIds, grupo) {
     cierre_num:   cierreNum,
     fecha_cierre: fechaCierre,
     backup:       backupInfo,
+    backup_error: backupError,
   };
 }
 
@@ -335,17 +338,22 @@ function _guardarBackupEnDrive(filas, headers, grupo, fechaCierre, tz) {
   const fecha  = fechaCierre.slice(0, 10);
   const nombre = 'backup_' + grupo + '_' + fecha + '.csv';
 
-  const headerRow = headers.map(h => '"' + h + '"').join(',');
-  const dataRows  = filas.map(f =>
-    headers.map((_, i) => '"' + String(f[i] instanceof Date
-      ? Utilities.formatDate(f[i], tz, "yyyy-MM-dd'T'HH:mm:ss")
-      : (f[i] ?? '')).replace(/"/g, '""') + '"').join(',')
-  );
-  const csv = '﻿' + [headerRow, ...dataRows].join('\n');
+  const headerRow = headers.map(function(h) { return '"' + String(h) + '"'; }).join(',');
+  const dataRows  = filas.map(function(f) {
+    return headers.map(function(_, i) {
+      var val = f[i];
+      if (val instanceof Date) {
+        val = Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
+      }
+      return '"' + String(val === null || val === undefined ? '' : val).replace(/"/g, '""') + '"';
+    }).join(',');
+  });
 
-  const it     = DriveApp.getFoldersByName('backupAppPan');
-  const folder = it.hasNext() ? it.next() : DriveApp.createFolder('backupAppPan');
-  folder.createFile(nombre, csv, MimeType.CSV);
+  var csv = '﻿' + [headerRow].concat(dataRows).join('\n');
+
+  var it     = DriveApp.getFoldersByName('backupAppPan');
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder('backupAppPan');
+  folder.createFile(nombre, csv, 'text/csv');
 
   return { archivo: nombre, carpeta: 'backupAppPan' };
 }

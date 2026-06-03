@@ -737,7 +737,7 @@ async function confirmarCierreDia() {
     const b = resultado.backup;
     const msg = b
       ? `✅ Día cerrado.\nBackup guardado en Google Drive:\n📁 ${b.carpeta} → ${b.archivo}`
-      : '✅ Día cerrado. (El backup en Drive no pudo completarse — revisá el log del script.)';
+      : `✅ Día cerrado.\n⚠️ Backup en Drive falló: ${resultado.backup_error || 'error desconocido'}`;
     alert(msg);
     await renderPantallaPrincipal();
   } catch (err) { alert('Error al cerrar: ' + err.message); }
