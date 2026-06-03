@@ -65,6 +65,10 @@ function cargarDesdeCache() {
   estado.devoluciones = JSON.parse(localStorage.getItem('cache_devoluciones') || '[]');
 }
 
+function getPasswords() {
+  return JSON.parse(localStorage.getItem('panaderia_passwords') || '{}');
+}
+
 // ─── Cálculos ─────────────────────────────────────────────────────────────────
 function n(v) { const x = parseFloat(v); return isNaN(x) ? 0 : x; }
 function kgPan(p)       { return n(p.frances_kg)+n(p.minon_kg)+n(p.sanguchero_kg)+n(p.negro_kg); }
@@ -118,6 +122,14 @@ async function elegirRol(rol) {
     nombre = await mostrarSelector(ops);
     if (!nombre) return;
   }
+  // Verificar contraseña si el admin la configuró para este rol
+  if (rol !== 'admin') {
+    const pwd = getPasswords()[rol];
+    if (pwd) {
+      const ok = await mostrarInputPassword(rol);
+      if (!ok) return;
+    }
+  }
   estado.rol = rol; estado.nombre = nombre;
   localStorage.setItem('sesion', JSON.stringify({ rol, nombre }));
   renderPantallaPrincipal();
@@ -134,6 +146,37 @@ function mostrarSelector(opciones) {
     </div>`;
     modal.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { modal.remove(); resolve(b.dataset.v || null); }));
     document.body.append(modal);
+  });
+}
+
+function mostrarInputPassword(rol) {
+  const labels = { encargada:'Encargada', embolsador:'Embolsador', repartidor:'Repartidor' };
+  return new Promise(resolve => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:600;padding:16px';
+    modal.innerHTML = `
+      <div class="card" style="width:90%;max-width:300px;text-align:center">
+        <h3 style="color:var(--accent);margin-bottom:14px">🔑 ${labels[rol]||rol}</h3>
+        <input id="pwd-acceso-input" type="password" placeholder="Contraseña"
+          style="width:100%;background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;color:var(--text);font-size:1rem;letter-spacing:.15em;margin-bottom:8px">
+        <div id="pwd-acceso-error" style="color:var(--danger);font-size:.8rem;margin-bottom:8px;display:none">Contraseña incorrecta</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1" id="pwd-ac-cancel">Cancelar</button>
+          <button class="btn btn-primary" style="flex:1" id="pwd-ac-ok">Ingresar</button>
+        </div>
+      </div>`;
+    document.body.append(modal);
+    const input    = modal.querySelector('#pwd-acceso-input');
+    const errorDiv = modal.querySelector('#pwd-acceso-error');
+    input.focus();
+    function verificar() {
+      const expected = getPasswords()[rol];
+      if (!expected || input.value === expected) { modal.remove(); resolve(true); }
+      else { errorDiv.style.display = 'block'; input.value = ''; input.focus(); }
+    }
+    modal.querySelector('#pwd-ac-ok').addEventListener('click', verificar);
+    modal.querySelector('#pwd-ac-cancel').addEventListener('click', () => { modal.remove(); resolve(false); });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') verificar(); });
   });
 }
 
@@ -291,6 +334,7 @@ function renderPlanilla() {
       ${(esEnc||esAdmin) ? `
         <div class="planilla-bottom-bar">
           ${esEnc ? `<button class="btn btn-primary" onclick="abrirModalCliente(null)">+ Cliente</button>` : ''}
+          ${esAdmin ? `<button class="btn btn-primary" onclick="abrirModalContrasenas()">🔑 Contraseñas</button>` : ''}
           <button class="btn btn-danger" onclick="cerrarDia()">🔒 Cerrar Día</button>
         </div>
       ` : ''}
@@ -1125,6 +1169,65 @@ function guardarNuevaPlanilla() {
   setPlanilla(id);
 }
 
+// ─── Contraseñas de roles (admin) ─────────────────────────────────────────────
+function abrirModalContrasenas() {
+  const pwds = getPasswords();
+  const roles = [
+    { key: 'encargada',  label: 'Encargada'  },
+    { key: 'embolsador', label: 'Embolsador' },
+    { key: 'repartidor', label: 'Repartidor' },
+  ];
+  const modal = document.createElement('div');
+  modal.id = 'modal-contrasenas';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:380px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span style="font-weight:700;color:var(--accent)">🔑 Contraseñas de acceso</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-contrasenas').remove()">✕</button>
+      </div>
+      ${roles.map(r => `
+        <div class="form-group">
+          <label style="text-transform:capitalize">${r.label}</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="pwd-${r.key}" type="password" value="${pwds[r.key]||''}" placeholder="Sin contraseña (acceso libre)"
+              style="flex:1;background:var(--card);border:1px solid #2a4a6a;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
+            <button class="btn-icon" title="Ver/ocultar" onclick="toggleVerPwd('pwd-${r.key}')">👁</button>
+          </div>
+        </div>`).join('')}
+      <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:14px">Vacío = sin contraseña (acceso directo sin pedirla).</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="quitarTodasContrasenas()">Quitar todas</button>
+        <button class="btn btn-primary" style="flex:1" onclick="guardarContrasenas()">Guardar</button>
+      </div>
+    </div>`;
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+}
+
+function toggleVerPwd(inputId) {
+  const el = document.getElementById(inputId);
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+function guardarContrasenas() {
+  const pwds = {};
+  ['encargada','embolsador','repartidor'].forEach(rol => {
+    const val = document.getElementById('pwd-' + rol)?.value.trim();
+    if (val) pwds[rol] = val;
+  });
+  localStorage.setItem('panaderia_passwords', JSON.stringify(pwds));
+  document.getElementById('modal-contrasenas')?.remove();
+  alert('✅ Contraseñas guardadas.');
+}
+
+function quitarTodasContrasenas() {
+  if (!confirm('¿Quitar todas las contraseñas?\nTodos los roles tendrán acceso libre.')) return;
+  localStorage.removeItem('panaderia_passwords');
+  document.getElementById('modal-contrasenas')?.remove();
+  alert('✅ Contraseñas eliminadas. Acceso libre para todos los roles.');
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('online',  () => { renderOfflineBanner(false); renderPantallaPrincipal(); });
 window.addEventListener('offline', () => renderOfflineBanner(true));
@@ -1158,4 +1261,5 @@ Object.assign(window, {
   abrirModalPersonal, renderModalPersonal, agregarPersonal, editarPersonal, eliminarPersonal,
   abrirModalGestionPlanillas, editarNombrePlanilla, eliminarPlanilla, crearPlanillaDesdeGestion,
   abrirModalNuevaPlanilla, guardarNuevaPlanilla,
+  abrirModalContrasenas, toggleVerPwd, guardarContrasenas, quitarTodasContrasenas,
 });
