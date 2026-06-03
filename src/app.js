@@ -224,7 +224,7 @@ function renderPlanilla() {
         ${estado.planillas.map(p=>`<button class="planilla-tab${p.id===estado.planillaActiva?' active':''}" onclick="setPlanilla('${p.id}')">${p.nombre}</button>`).join('')}
         ${esAdmin ? `<button class="planilla-tab planilla-tab-gear" onclick="abrirModalGestionPlanillas()" title="Gestionar planillas">⚙️</button>` : ''}
       </div>
-      ${devNoRevisadas>0 ? `<div class="alerta alerta-devolucion" style="margin:6px 8px 0">⚠️ ${devNoRevisadas} devolución(es) sin revisar</div>` : ''}
+      ${devNoRevisadas>0 && (esEnc||esAdmin) ? `<div class="alerta alerta-devolucion" style="margin:6px 8px 0;cursor:pointer" onclick="abrirNotificacionesDevoluciones()">↩ ${devNoRevisadas} devolución(es) sin revisar — <span style="text-decoration:underline;font-size:.85em">ver</span></div>` : ''}
       ${cancelados>0 ? `<div class="alerta alerta-danger" style="margin:6px 8px 0">🚫 ${cancelados} pedido(s) cancelado(s)</div>` : ''}
       <div class="rol-badge-bar">👤 ${estado.nombre}</div>
 
@@ -916,6 +916,76 @@ async function confirmarDevolucion(pedidoId) {
   } catch (err) { alert('Error: ' + err.message); }
 }
 
+// ─── Notificaciones de devoluciones ──────────────────────────────────────────
+function abrirNotificacionesDevoluciones() {
+  const cids = new Set(clientesDePlanilla().map(c => c.id));
+  const devs = estado.devoluciones.filter(d =>
+    (d.revisado === 'no' || d.revisado === false) && cids.has(d.cliente_id)
+  );
+  if (!devs.length) return;
+
+  function productosDev(d) {
+    return [
+      ['Francés',    d.frances_dev],    ['Miñón',     d.minon_dev],
+      ['Sanguchero', d.sanguchero_dev], ['Negro',     d.negro_dev],
+      ['T.Fina',     d.tort_fina_dev],  ['T.Gruesa',  d.tort_gruesa_dev],
+      ['Bollito',    d.bollito_dev],    ['Cuernito-T',d.cuernito_tomate_dev],
+      ['F.Crema',    d.fact_crema_dev], ['Med-Luna',  d.media_luna_dev],
+      ['Sacra-Vig',  d.sacra_vigilante_dev],
+    ].filter(([_,v]) => n(v) > 0)
+     .map(([lbl,v]) => `<b>${displayNum(v)}</b> ${lbl}`)
+     .join(' · ');
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-notif-devoluciones';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
+  modal.innerHTML = `
+    <div style="max-width:480px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-weight:700;color:var(--warning);font-size:1rem">↩ Devoluciones pendientes (${devs.length})</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-notif-devoluciones').remove()">✕</button>
+      </div>
+      ${devs.map(d => {
+        const cliente = estado.clientes.find(c => c.id === d.cliente_id);
+        const hora    = String(d.hora_devolucion || d.fecha || '').slice(0, 16).replace('T', ' ');
+        const prods   = productosDev(d);
+        return `
+          <div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:12px;border-left:4px solid var(--warning)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+              <div>
+                <div style="font-weight:700;font-size:.95rem">${cliente?.nombre || d.cliente_id}</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">${hora}${d.devuelto_por ? ' · ' + d.devuelto_por + ' (' + (d.rol_devuelto||'') + ')' : ''}</div>
+              </div>
+              <button class="btn-xs btn-success" style="white-space:nowrap" onclick="revisarDevolucion('${d.id}')">✓ Revisado</button>
+            </div>
+            ${prods ? `<div style="font-size:.82rem;margin-bottom:${d.motivo?'6':'0'}px">${prods}</div>` : ''}
+            ${d.motivo ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px;font-style:italic">"${d.motivo}"</div>` : ''}
+          </div>`;
+      }).join('')}
+    </div>`;
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+}
+
+async function revisarDevolucion(id) {
+  try {
+    await api('marcar_devolucion_revisada', { id });
+    const dev = estado.devoluciones.find(d => d.id === id);
+    if (dev) dev.revisado = 'si';
+    document.getElementById('modal-notif-devoluciones')?.remove();
+    const cids = new Set(clientesDePlanilla().map(c => c.id));
+    const pendientes = estado.devoluciones.filter(d =>
+      (d.revisado === 'no' || d.revisado === false) && cids.has(d.cliente_id)
+    );
+    if (pendientes.length) {
+      abrirNotificacionesDevoluciones();
+    } else {
+      renderPlanilla();
+    }
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
 // ─── Gestionar planillas (admin) ──────────────────────────────────────────────
 const _PLANILLAS_DEFAULT = new Set(['IONA','SAN_JUAN','FACTURAS','PASCUAL']);
 
@@ -1083,6 +1153,7 @@ Object.assign(window, {
   confirmarReorden, exportarPDF, exportarExcel,
   cerrarDia, cerrarModalCierre, exportarPDFSinModal, toggleTodos, confirmarCierreDia,
   abrirModalDevolucion, confirmarDevolucion,
+  abrirNotificacionesDevoluciones, revisarDevolucion,
   tapMover, cancelarMover,
   abrirModalPersonal, renderModalPersonal, agregarPersonal, editarPersonal, eliminarPersonal,
   abrirModalGestionPlanillas, editarNombrePlanilla, eliminarPlanilla, crearPlanillaDesdeGestion,
