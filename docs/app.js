@@ -732,109 +732,15 @@ async function confirmarCierreDia() {
   if (!confirm(`¿Confirmar cierre del día?\n${mantener.length} cliente(s) se mantendrán para mañana.`)) return;
 
   try {
-    const resultado  = await api('cerrar_dia', { mantener_ids: mantener, grupo: estado.planillaActiva });
-    const fecha      = new Date().toISOString().slice(0, 10);
-    const pNombre    = (estado.planillas.find(p=>p.id===estado.planillaActiva)||{nombre:estado.planillaActiva}).nombre;
-    const nombreArchivo = `backup_${pNombre}_${fecha}.csv`;
-    await guardarBackupCierre(resultado.pedidos, nombreArchivo);
+    const resultado = await api('cerrar_dia', { mantener_ids: mantener, grupo: estado.planillaActiva });
     document.getElementById('modal-container').innerHTML = '';
-    alert(`✅ Día cerrado. Backup guardado: ${nombreArchivo}`);
+    const b = resultado.backup;
+    const msg = b
+      ? `✅ Día cerrado.\nBackup guardado en Google Drive:\n📁 ${b.carpeta} → ${b.archivo}`
+      : '✅ Día cerrado. (El backup en Drive no pudo completarse — revisá el log del script.)';
+    alert(msg);
     await renderPantallaPrincipal();
   } catch (err) { alert('Error al cerrar: ' + err.message); }
-}
-
-// ─── Backup de cierre ─────────────────────────────────────────────────────────
-
-// IndexedDB: guarda y recupera el handle de la carpeta backupAppPan entre sesiones.
-const _idb = {
-  _db: null,
-  async _open() {
-    if (this._db) return this._db;
-    return new Promise((res, rej) => {
-      const r = indexedDB.open('panaderia_backup_v1', 1);
-      r.onupgradeneeded = e => e.target.result.createObjectStore('kv');
-      r.onsuccess  = e => { this._db = e.target.result; res(this._db); };
-      r.onerror    = () => rej(r.error);
-    });
-  },
-  async get(key) {
-    try {
-      const db = await this._open();
-      return new Promise(res => {
-        const req = db.transaction('kv','readonly').objectStore('kv').get(key);
-        req.onsuccess = () => res(req.result ?? null);
-        req.onerror   = () => res(null);
-      });
-    } catch { return null; }
-  },
-  async set(key, val) {
-    try {
-      const db = await this._open();
-      return new Promise((res, rej) => {
-        const tx = db.transaction('kv','readwrite');
-        tx.objectStore('kv').put(val, key);
-        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
-      });
-    } catch {}
-  },
-};
-
-async function guardarBackupCierre(pedidos, nombre) {
-  if (!pedidos?.length) return;
-  const hs   = Object.keys(pedidos[0]);
-  const csv  = '﻿' + [hs, ...pedidos.map(p => hs.map(h => `"${p[h]??''}"`))].map(r=>r.join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-
-  // 1) Intentar guardar directo en carpeta backupAppPan (Chrome desktop / Android)
-  if (window.showDirectoryPicker) {
-    try {
-      let dir = await _idb.get('backupDir');
-
-      if (dir) {
-        const perm = await dir.queryPermission({ mode: 'readwrite' });
-        if (perm !== 'granted') {
-          const req = await dir.requestPermission({ mode: 'readwrite' });
-          if (req !== 'granted') dir = null;
-        }
-      }
-
-      if (!dir) {
-        alert('Primera vez: elegí la carpeta "backupAppPan" donde se guardarán los backups automáticamente.');
-        dir = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
-        await _idb.set('backupDir', dir);
-      }
-
-      const fh = await dir.getFileHandle(nombre, { create: true });
-      const wr = await fh.createWritable();
-      await wr.write(blob); await wr.close();
-      return;
-    } catch (e) {
-      if (e.name === 'AbortError') return; // usuario canceló
-      console.warn('Falló guardar en carpeta, intentando Save As:', e.message);
-    }
-  }
-
-  // 2) Save As dialog (Firefox / Android cuando no hay permiso de directorio)
-  if (window.showSaveFilePicker) {
-    try {
-      const fh = await window.showSaveFilePicker({
-        suggestedName: nombre,
-        types: [{ description: 'Planilla CSV', accept: { 'text/csv': ['.csv'] } }],
-        startIn: 'documents',
-      });
-      const wr = await fh.createWritable();
-      await wr.write(blob); await wr.close();
-      return;
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-    }
-  }
-
-  // 3) Descarga clásica (fallback iOS / navegadores sin File System Access API)
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.href = url; a.download = nombre; a.click();
-  URL.revokeObjectURL(url);
 }
 
 // ─── Gestionar Personal ───────────────────────────────────────────────────────

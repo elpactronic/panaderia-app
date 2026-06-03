@@ -18,7 +18,7 @@ function setupPanaderia() {
   ]);
 
   crearHoja(ss, 'pedidos', [
-    'id', 'fecha', 'cliente_id',
+    'id', 'fecha', 'cliente_id', 'grupo',
     'frances_kg', 'minon_kg', 'sanguchero_kg', 'negro_kg',
     'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
     'fact_crema', 'media_luna', 'sacra_vigilante',
@@ -31,7 +31,7 @@ function setupPanaderia() {
   ]);
 
   crearHoja(ss, 'historial', [
-    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id',
+    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id', 'grupo',
     'frances_kg', 'minon_kg', 'sanguchero_kg', 'negro_kg',
     'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
     'fact_crema', 'media_luna', 'sacra_vigilante',
@@ -147,7 +147,8 @@ function manejarRequest(e) {
       case 'cancelar_pedido':     resultado = cancelarPedido(datos.id);    break;
       case 'guardar_cliente':     resultado = guardarCliente(datos);       break;
       case 'guardar_precio':      resultado = guardarPrecio(datos);        break;
-      case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_ids);       break;
+      case 'cerrar_dia':          resultado = cerrarDia(datos.mantener_ids, datos.grupo); break;
+      case 'listar_planillas':    resultado = listarPlanillas();                   break;
       case 'reordenar_clientes':  resultado = reordenarClientes(datos.clientes);   break;
       case 'registrar_devolucion':resultado = registrarDevolucion(datos);          break;
       case 'listar_devoluciones': resultado = listarDevoluciones();                break;
@@ -251,20 +252,21 @@ function obtenerOCrearHoja(ss, nombre, columnas) {
   return hoja;
 }
 
-function cerrarDia(mantenerIds) {
+function cerrarDia(mantenerIds, grupo) {
   mantenerIds = mantenerIds || [];
+  grupo       = grupo || 'IONA';
   const ss          = SpreadsheetApp.getActiveSpreadsheet();
   const hojaPedidos = ss.getSheetByName('pedidos');
   const hojaConfig  = ss.getSheetByName('config');
 
   const hojaHistorial = obtenerOCrearHoja(ss, 'historial', [
-    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id',
+    'cierre_num', 'fecha_cierre', 'id', 'fecha', 'cliente_id', 'grupo',
     'frances_kg', 'minon_kg', 'sanguchero_kg', 'negro_kg',
     'tort_fina', 'tort_gruesa', 'bollito', 'cuernito_tomate',
     'fact_crema', 'media_luna', 'sacra_vigilante',
     'monto_total', 'status', 'hora_pedido', 'embolsador', 'hora_embolsado', 'notas'
   ]);
-  const tz            = Session.getScriptTimeZone();
+  const tz = Session.getScriptTimeZone();
 
   const cfgVals = hojaConfig.getDataRange().getValues();
   let cierreNum = 1;
@@ -276,40 +278,76 @@ function cerrarDia(mantenerIds) {
     }
   }
 
-  const fechaCierre = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss");
+  const fechaCierre     = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss");
   const [headers, ...filas] = hojaPedidos.getDataRange().getValues();
-  const pedidos = filas.filter(f => f.some(c => c !== ''));
+  const todosLosPedidos = filas.filter(f => f.some(c => c !== ''));
 
-  pedidos.forEach(fila => hojaHistorial.appendRow([cierreNum, fechaCierre, ...fila]));
+  const grupoIdx   = headers.indexOf('grupo');
+  const clienteIdx = headers.indexOf('cliente_id');
 
+  // Separar pedidos de esta planilla vs. las demás
+  const pedidosGrupo = todosLosPedidos.filter(f =>
+    (grupoIdx >= 0 ? String(f[grupoIdx]) : 'IONA') === grupo
+  );
+  const pedidosOtros = todosLosPedidos.filter(f =>
+    (grupoIdx >= 0 ? String(f[grupoIdx]) : 'IONA') !== grupo
+  );
+
+  pedidosGrupo.forEach(fila => hojaHistorial.appendRow([cierreNum, fechaCierre, ...fila]));
+
+  // Limpiar hoja: restaurar otras planillas + pedidos "mantener" reseteados
   if (hojaPedidos.getLastRow() > 1) {
     hojaPedidos.getRange(2, 1, hojaPedidos.getLastRow() - 1, hojaPedidos.getLastColumn()).clearContent();
   }
+  pedidosOtros.forEach(fila => hojaPedidos.appendRow(fila));
 
-  if (mantenerIds && mantenerIds.length > 0) {
-    const clienteIdx = headers.indexOf('cliente_id');
-    pedidos
+  if (mantenerIds.length > 0) {
+    pedidosGrupo
       .filter(f => mantenerIds.includes(String(f[clienteIdx])))
       .forEach(fila => {
-        // Reiniciar el pedido como pendiente para el día siguiente
-        const nuevaFila = [...fila];
-        const statusIdx = headers.indexOf('status');
-        const embolsadorIdx = headers.indexOf('embolsador');
+        const nuevaFila        = [...fila];
+        const statusIdx        = headers.indexOf('status');
+        const embolsadorIdx    = headers.indexOf('embolsador');
         const horaEmbolsadoIdx = headers.indexOf('hora_embolsado');
-        if (statusIdx >= 0)      nuevaFila[statusIdx]      = 'pendiente';
-        if (embolsadorIdx >= 0)  nuevaFila[embolsadorIdx]  = '';
+        if (statusIdx >= 0)        nuevaFila[statusIdx]        = 'pendiente';
+        if (embolsadorIdx >= 0)    nuevaFila[embolsadorIdx]    = '';
         if (horaEmbolsadoIdx >= 0) nuevaFila[horaEmbolsadoIdx] = '';
         hojaPedidos.appendRow(nuevaFila);
       });
   }
 
+  // Guardar backup en carpeta backupAppPan del Drive de esta cuenta
+  let backupInfo = null;
+  try {
+    backupInfo = _guardarBackupEnDrive(pedidosGrupo, headers, grupo, fechaCierre, tz);
+  } catch (e) {
+    Logger.log('Backup Drive falló: ' + e.message);
+  }
+
   return {
-    cierre_num: cierreNum,
+    cierre_num:   cierreNum,
     fecha_cierre: fechaCierre,
-    pedidos: pedidos.map(fila =>
-      Object.fromEntries(headers.map((h, i) => [h, fila[i] instanceof Date ? fila[i].toISOString() : fila[i]]))
-    )
+    backup:       backupInfo,
   };
+}
+
+function _guardarBackupEnDrive(filas, headers, grupo, fechaCierre, tz) {
+  const fecha  = fechaCierre.slice(0, 10);
+  const nombre = 'backup_' + grupo + '_' + fecha + '.csv';
+
+  const headerRow = headers.map(h => '"' + h + '"').join(',');
+  const dataRows  = filas.map(f =>
+    headers.map((_, i) => '"' + String(f[i] instanceof Date
+      ? Utilities.formatDate(f[i], tz, "yyyy-MM-dd'T'HH:mm:ss")
+      : (f[i] ?? '')).replace(/"/g, '""') + '"').join(',')
+  );
+  const csv = '﻿' + [headerRow, ...dataRows].join('\n');
+
+  const it     = DriveApp.getFoldersByName('backupAppPan');
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder('backupAppPan');
+  folder.createFile(nombre, csv, MimeType.CSV);
+
+  return { archivo: nombre, carpeta: 'backupAppPan' };
 }
 
 // ─── Helpers de escritura ──────────────────────────────────────────────────────
@@ -323,6 +361,7 @@ function crearPedido(datos) {
     id,
     datos.fecha,
     datos.cliente_id,
+    datos.grupo           || 'IONA',
     datos.frances_kg      || 0,
     datos.minon_kg        || 0,
     datos.sanguchero_kg   || 0,
@@ -534,4 +573,37 @@ function eliminarPersonal(id, nombreHoja) {
     }
   }
   return { ok: false };
+}
+
+// ─── Migración: agregar columna grupo (ejecutar UNA vez) ──────────────────────
+
+function migrarAgregarGrupo() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  _migrarColumnaGrupo(ss.getSheetByName('pedidos'),   4); // después de cliente_id
+  _migrarColumnaGrupo(ss.getSheetByName('historial'), 6); // después de cliente_id (col 5)
+  SpreadsheetApp.flush();
+  Logger.log('✅ Migración completada.');
+}
+
+function _migrarColumnaGrupo(hoja, posicion) {
+  if (!hoja) return;
+  const headers = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
+  if (headers.includes('grupo')) { Logger.log('⏭ ' + hoja.getName() + ': grupo ya existe.'); return; }
+  hoja.insertColumnBefore(posicion);
+  const cell = hoja.getRange(1, posicion);
+  cell.setValue('grupo');
+  cell.setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+  if (hoja.getLastRow() > 1) hoja.getRange(2, posicion, hoja.getLastRow() - 1, 1).setValue('IONA');
+  Logger.log('✅ ' + hoja.getName() + ': columna grupo insertada.');
+}
+
+// ─── Planillas ────────────────────────────────────────────────────────────────
+
+function listarPlanillas() {
+  return [
+    { id: 'IONA',     nombre: 'Iona',     tipo: 'panaderia' },
+    { id: 'SAN_JUAN', nombre: 'San Juan', tipo: 'panaderia' },
+    { id: 'FACTURAS', nombre: 'Facturas', tipo: 'facturas'  },
+    { id: 'PASCUAL',  nombre: 'Pascual',  tipo: 'panaderia' },
+  ];
 }
