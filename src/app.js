@@ -122,11 +122,19 @@ async function elegirRol(rol) {
     nombre = await mostrarSelector(ops);
     if (!nombre) return;
   }
-  // Verificar contraseña si el admin la configuró para este rol
+  // Verificar contraseña por persona (no por rol)
   if (rol !== 'admin') {
-    const pwd = getPasswords()[rol];
+    let pwdKey = rol; // encargada usa la clave 'encargada'
+    if (rol === 'embolsador') {
+      const p = estado.embolsadores.find(e => e.nombre === nombre);
+      pwdKey = 'emb_' + (p ? p.id : nombre);
+    } else if (rol === 'repartidor') {
+      const p = estado.repartidores.find(r => r.nombre === nombre);
+      pwdKey = 'rep_' + (p ? p.id : nombre);
+    }
+    const pwd = getPasswords()[pwdKey];
     if (pwd) {
-      const ok = await mostrarInputPassword(rol);
+      const ok = await mostrarInputPassword(nombre, pwdKey);
       if (!ok) return;
     }
   }
@@ -149,14 +157,13 @@ function mostrarSelector(opciones) {
   });
 }
 
-function mostrarInputPassword(rol) {
-  const labels = { encargada:'Encargada', embolsador:'Embolsador', repartidor:'Repartidor' };
+function mostrarInputPassword(displayName, pwdKey) {
   return new Promise(resolve => {
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:600;padding:16px';
     modal.innerHTML = `
       <div class="card" style="width:90%;max-width:300px;text-align:center">
-        <h3 style="color:var(--accent);margin-bottom:14px">🔑 ${labels[rol]||rol}</h3>
+        <h3 style="color:var(--accent);margin-bottom:14px">🔑 ${displayName}</h3>
         <input id="pwd-acceso-input" type="password" placeholder="Contraseña"
           style="width:100%;background:var(--card);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;color:var(--text);font-size:1rem;letter-spacing:.15em;margin-bottom:8px">
         <div id="pwd-acceso-error" style="color:var(--danger);font-size:.8rem;margin-bottom:8px;display:none">Contraseña incorrecta</div>
@@ -170,7 +177,7 @@ function mostrarInputPassword(rol) {
     const errorDiv = modal.querySelector('#pwd-acceso-error');
     input.focus();
     function verificar() {
-      const expected = getPasswords()[rol];
+      const expected = getPasswords()[pwdKey];
       if (!expected || input.value === expected) { modal.remove(); resolve(true); }
       else { errorDiv.style.display = 'block'; input.value = ''; input.focus(); }
     }
@@ -1169,33 +1176,48 @@ function guardarNuevaPlanilla() {
   setPlanilla(id);
 }
 
-// ─── Contraseñas de roles (admin) ─────────────────────────────────────────────
+// ─── Contraseñas por persona (admin) ──────────────────────────────────────────
 function abrirModalContrasenas() {
   const pwds = getPasswords();
-  const roles = [
-    { key: 'encargada',  label: 'Encargada'  },
-    { key: 'embolsador', label: 'Embolsador' },
-    { key: 'repartidor', label: 'Repartidor' },
-  ];
+
+  function fila(label, key, sublabel) {
+    const uid = 'pwdf_' + key.replace(/[^a-z0-9]/gi,'_');
+    return `
+      <div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.88rem">${label}</div>
+          ${sublabel ? `<div style="font-size:.72rem;color:var(--text-muted)">${sublabel}</div>` : ''}
+        </div>
+        <input id="${uid}" type="password" data-key="${key}" value="${pwds[key]||''}"
+          placeholder="sin contraseña" class="pwd-managed-input"
+          style="width:130px;background:var(--card);border:1px solid #2a4a6a;border-radius:6px;padding:6px 8px;color:var(--text);font-size:.82rem">
+        <button class="btn-icon" style="font-size:.9rem" onclick="toggleVerPwd('${uid}')">👁</button>
+      </div>`;
+  }
+
+  const embRows = estado.embolsadores.length
+    ? estado.embolsadores.map(e => fila(e.nombre, 'emb_'+e.id, 'Embolsador')).join('')
+    : '<p style="font-size:.8rem;color:var(--text-muted);padding:8px 0">Sin embolsadores registrados</p>';
+
+  const repRows = estado.repartidores.length
+    ? estado.repartidores.map(r => fila(r.nombre, 'rep_'+r.id, 'Repartidor')).join('')
+    : '<p style="font-size:.8rem;color:var(--text-muted);padding:8px 0">Sin repartidores registrados</p>';
+
   const modal = document.createElement('div');
   modal.id = 'modal-contrasenas';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
   modal.innerHTML = `
-    <div class="card" style="width:100%;max-width:380px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <span style="font-weight:700;color:var(--accent)">🔑 Contraseñas de acceso</span>
+    <div class="card" style="max-width:420px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-weight:700;color:var(--accent)">🔑 Contraseñas por persona</span>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-contrasenas').remove()">✕</button>
       </div>
-      ${roles.map(r => `
-        <div class="form-group">
-          <label style="text-transform:capitalize">${r.label}</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input id="pwd-${r.key}" type="password" value="${pwds[r.key]||''}" placeholder="Sin contraseña (acceso libre)"
-              style="flex:1;background:var(--card);border:1px solid #2a4a6a;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
-            <button class="btn-icon" title="Ver/ocultar" onclick="toggleVerPwd('pwd-${r.key}')">👁</button>
-          </div>
-        </div>`).join('')}
-      <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:14px">Vacío = sin contraseña (acceso directo sin pedirla).</p>
+      ${fila('Encargada', 'encargada', '')}
+      <p style="font-size:.72rem;color:var(--text-muted);margin:10px 0 4px;font-weight:600">EMBOLSADORES</p>
+      ${embRows}
+      <p style="font-size:.72rem;color:var(--text-muted);margin:10px 0 4px;font-weight:600">REPARTIDORES</p>
+      ${repRows}
+      <p style="font-size:.72rem;color:var(--text-muted);margin:12px 0 10px">Vacío = sin contraseña (acceso directo).</p>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost" style="flex:1" onclick="quitarTodasContrasenas()">Quitar todas</button>
         <button class="btn btn-primary" style="flex:1" onclick="guardarContrasenas()">Guardar</button>
@@ -1212,9 +1234,9 @@ function toggleVerPwd(inputId) {
 
 function guardarContrasenas() {
   const pwds = {};
-  ['encargada','embolsador','repartidor'].forEach(rol => {
-    const val = document.getElementById('pwd-' + rol)?.value.trim();
-    if (val) pwds[rol] = val;
+  document.querySelectorAll('.pwd-managed-input').forEach(input => {
+    const val = input.value.trim();
+    if (val) pwds[input.dataset.key] = val;
   });
   localStorage.setItem('panaderia_passwords', JSON.stringify(pwds));
   document.getElementById('modal-contrasenas')?.remove();
