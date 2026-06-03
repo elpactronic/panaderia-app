@@ -22,6 +22,9 @@ let moveMode = { active: false, fromIdx: null };
 JSON.parse(localStorage.getItem('planillas_custom') || '[]').forEach(p => {
   if (!estado.planillas.some(x => x.id === p.id)) estado.planillas.push(p);
 });
+// Aplicar renombres guardados
+const _nombresOvr = JSON.parse(localStorage.getItem('planillas_nombres') || '{}');
+estado.planillas.forEach(p => { if (_nombresOvr[p.id]) p.nombre = _nombresOvr[p.id]; });
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 async function api(accion, datos = {}) {
@@ -219,6 +222,7 @@ function renderPlanilla() {
 
       <div class="planilla-tabs-bar">
         ${estado.planillas.map(p=>`<button class="planilla-tab${p.id===estado.planillaActiva?' active':''}" onclick="setPlanilla('${p.id}')">${p.nombre}</button>`).join('')}
+        ${esAdmin ? `<button class="planilla-tab planilla-tab-gear" onclick="abrirModalGestionPlanillas()" title="Gestionar planillas">⚙️</button>` : ''}
       </div>
       ${devNoRevisadas>0 ? `<div class="alerta alerta-devolucion" style="margin:6px 8px 0">⚠️ ${devNoRevisadas} devolución(es) sin revisar</div>` : ''}
       ${cancelados>0 ? `<div class="alerta alerta-danger" style="margin:6px 8px 0">🚫 ${cancelados} pedido(s) cancelado(s)</div>` : ''}
@@ -287,7 +291,6 @@ function renderPlanilla() {
       ${(esEnc||esAdmin) ? `
         <div class="planilla-bottom-bar">
           ${esEnc ? `<button class="btn btn-primary" onclick="abrirModalCliente(null)">+ Cliente</button>` : ''}
-          ${esAdmin ? `<button class="btn btn-primary" onclick="abrirModalNuevaPlanilla()">+ Planilla</button>` : ''}
           <button class="btn btn-danger" onclick="cerrarDia()">🔒 Cerrar Día</button>
         </div>
       ` : ''}
@@ -927,6 +930,97 @@ async function confirmarDevolucion(pedidoId) {
 }
 
 // ─── Gestionar planillas (admin) ──────────────────────────────────────────────
+const _PLANILLAS_DEFAULT = new Set(['IONA','SAN_JUAN','FACTURAS','PASCUAL']);
+
+function abrirModalGestionPlanillas() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-gestion-planillas';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;overflow-y:auto;padding:16px';
+  modal.innerHTML = `
+    <div class="card" style="max-width:460px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span style="font-weight:700;color:var(--accent)">⚙️ Gestionar Planillas</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-gestion-planillas').remove()">✕</button>
+      </div>
+      <div id="gp-lista">
+        ${estado.planillas.map(p => `
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--card)">
+            <span style="flex:1;font-size:.9rem">${p.nombre}</span>
+            <span style="font-size:.68rem;padding:2px 8px;border-radius:10px;font-weight:600;
+              background:${p.tipo==='facturas'?'#1a3a5c':'#1a3a1a'};
+              color:${p.tipo==='facturas'?'#6bb8ff':'#4caf50'}">
+              ${p.tipo==='facturas'?'Facturas':'Panadería'}
+            </span>
+            <button class="btn-xs btn-ghost" onclick="editarNombrePlanilla('${p.id}')">✏️</button>
+            ${!_PLANILLAS_DEFAULT.has(p.id) ? `<button class="btn-xs btn-danger" onclick="eliminarPlanilla('${p.id}')">🗑</button>` : ''}
+          </div>`).join('')}
+      </div>
+      <div style="margin-top:16px;border-top:1px solid var(--card);padding-top:14px">
+        <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px;font-weight:600">Nueva planilla</p>
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input id="gp-nombre" type="text" placeholder="Ej: San Pedro, Mercado Norte...">
+        </div>
+        <div class="form-group">
+          <label>Tipo</label>
+          <select id="gp-tipo" style="width:100%;background:var(--card);border:1px solid #2a4a6a;border-radius:8px;padding:9px 12px;color:var(--text);font-size:.9rem">
+            <option value="panaderia">Panadería — pan + tortillas</option>
+            <option value="facturas">Facturas — crema, med-luna, sacr-vig</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="crearPlanillaDesdeGestion()">+ Crear planilla</button>
+      </div>
+    </div>`;
+  document.getElementById('modal-container').innerHTML = '';
+  document.getElementById('modal-container').append(modal);
+  setTimeout(() => document.getElementById('gp-nombre')?.focus(), 50);
+  document.getElementById('gp-nombre')?.addEventListener('keydown', e => { if (e.key === 'Enter') crearPlanillaDesdeGestion(); });
+}
+
+function editarNombrePlanilla(id) {
+  const p = estado.planillas.find(x => x.id === id);
+  if (!p) return;
+  const nuevo = prompt('Nuevo nombre:', p.nombre)?.trim();
+  if (!nuevo || nuevo === p.nombre) return;
+  p.nombre = nuevo;
+  const overrides = JSON.parse(localStorage.getItem('planillas_nombres') || '{}');
+  overrides[id] = nuevo;
+  localStorage.setItem('planillas_nombres', JSON.stringify(overrides));
+  const custom = JSON.parse(localStorage.getItem('planillas_custom') || '[]');
+  const ci = custom.findIndex(x => x.id === id);
+  if (ci >= 0) { custom[ci].nombre = nuevo; localStorage.setItem('planillas_custom', JSON.stringify(custom)); }
+  abrirModalGestionPlanillas();
+  if (estado.planillaActiva === id) renderPlanilla();
+}
+
+function eliminarPlanilla(id) {
+  const p = estado.planillas.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`¿Eliminar la planilla "${p.nombre}"?\nLos clientes asignados quedarán sin planilla hasta reasignarlos.`)) return;
+  estado.planillas = estado.planillas.filter(x => x.id !== id);
+  const custom = JSON.parse(localStorage.getItem('planillas_custom') || '[]');
+  localStorage.setItem('planillas_custom', JSON.stringify(custom.filter(x => x.id !== id)));
+  if (estado.planillaActiva === id) setPlanilla(estado.planillas[0]?.id || 'IONA');
+  abrirModalGestionPlanillas();
+}
+
+function crearPlanillaDesdeGestion() {
+  const nombre = document.getElementById('gp-nombre')?.value.trim();
+  if (!nombre) { alert('Ingresá un nombre'); return; }
+  const id = nombre.toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  if (!id) { alert('Nombre inválido'); return; }
+  if (estado.planillas.some(p => p.id === id)) { alert('Ya existe una planilla con ese nombre'); return; }
+  const tipo  = document.getElementById('gp-tipo')?.value || 'panaderia';
+  const nueva = { id, nombre, tipo };
+  estado.planillas.push(nueva);
+  const custom = JSON.parse(localStorage.getItem('planillas_custom') || '[]');
+  custom.push(nueva);
+  localStorage.setItem('planillas_custom', JSON.stringify(custom));
+  abrirModalGestionPlanillas();
+}
+
 function abrirModalNuevaPlanilla() {
   const modal = document.createElement('div');
   modal.id = 'modal-nueva-planilla';
@@ -1004,5 +1098,6 @@ Object.assign(window, {
   abrirModalDevolucion, confirmarDevolucion,
   tapMover, cancelarMover,
   abrirModalPersonal, renderModalPersonal, agregarPersonal, editarPersonal, eliminarPersonal,
+  abrirModalGestionPlanillas, editarNombrePlanilla, eliminarPlanilla, crearPlanillaDesdeGestion,
   abrirModalNuevaPlanilla, guardarNuevaPlanilla,
 });
