@@ -597,6 +597,15 @@ function _migrarColumnaGrupo(hoja, posicion) {
   Logger.log('✅ ' + hoja.getName() + ': columna grupo insertada.');
 }
 
+// ─── Test Drive (ejecutar una vez para autorizar acceso a Drive) ──────────────
+
+function testDrive() {
+  const carpeta = DriveApp.getFoldersByName('backupAppPan').hasNext()
+    ? DriveApp.getFoldersByName('backupAppPan').next()
+    : DriveApp.createFolder('backupAppPan');
+  Logger.log('✅ Drive OK. Carpeta: ' + carpeta.getName() + ' — ID: ' + carpeta.getId());
+}
+
 // ─── Planillas ────────────────────────────────────────────────────────────────
 
 function listarPlanillas() {
